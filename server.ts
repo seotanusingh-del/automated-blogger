@@ -20,37 +20,28 @@ app.use(express.json({ limit: '10mb' }));
 /**
  * Standardized Access Token Retrieval using Refresh Token
  */
-async function getAccessToken(overrides?: any): Promise<string | null> {
+async function getAccessToken(): Promise<string | null> {
   try {
-    // 1. Determine which credentials to use. 
-    // If overrides are provided, prioritize them. If NO overrides, use ENV. If NO ENV, use hardcoded test client.
-    const hasOverrides = overrides && (overrides.client_id || overrides.refresh_token);
-    
-    const clientId = overrides?.client_id || process.env.GOOGLE_CLIENT_ID || '';
-    const refreshToken = overrides?.refresh_token || process.env.GOOGLE_REFRESH_TOKEN || '';
-    
-    // If user provided a custom Client ID, ONLY use their provided secret (don't fallback to the hardcoded test secret)
-    let clientSecret = overrides?.client_secret || process.env.GOOGLE_CLIENT_SECRET;
-    if (!clientSecret && !hasOverrides && !process.env.GOOGLE_CLIENT_ID) {
-      clientSecret = '';
-    }
+    const clientId = process.env.GOOGLE_CLIENT_ID || '';
+    const refreshToken = process.env.GOOGLE_REFRESH_TOKEN || '';
+    const clientSecret = process.env.GOOGLE_CLIENT_SECRET || '';
 
     if (!refreshToken) {
-      console.warn('[Backend] No refresh token available.');
+      console.warn('[Backend] No GOOGLE_REFRESH_TOKEN available in environment.');
       return null;
     }
 
-    const params: any = {
+    const params = new URLSearchParams({
       client_id: clientId,
       refresh_token: refreshToken,
       grant_type: 'refresh_token',
-    };
-    if (clientSecret) params.client_secret = clientSecret;
+    });
+    if (clientSecret) params.append('client_secret', clientSecret);
 
     const res = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams(params),
+      body: params,
     });
     
     const data: any = await res.json();
@@ -58,8 +49,11 @@ async function getAccessToken(overrides?: any): Promise<string | null> {
     // Retry without secret if unauthorized_client (common for public/playground clients)
     if (!data.access_token && clientSecret && (data.error === 'unauthorized_client' || data.error === 'invalid_client')) {
       console.log('[Backend] Auth failed with secret. Retrying WITHOUT client_secret...');
-      const retryParams = new URLSearchParams(params);
-      retryParams.delete('client_secret');
+      const retryParams = new URLSearchParams({
+        client_id: clientId,
+        refresh_token: refreshToken,
+        grant_type: 'refresh_token',
+      });
       const retryRes = await fetch('https://oauth2.googleapis.com/token', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -81,8 +75,7 @@ async function getAccessToken(overrides?: any): Promise<string | null> {
 }
 
 app.get(['/api/status', '/status'], async (req, res) => {
-  // Check if credentials provided in query for status check (optional)
-  const token = await getAccessToken(req.query);
+  const token = await getAccessToken();
   res.json({ connected: !!token });
 });
 
@@ -102,7 +95,7 @@ app.post(['/api/blogger/publish', '/blogger/publish'], async (req, res) => {
     return res.status(400).json({ error: 'Missing blogId, title or content.' });
   }
 
-  const accessToken = await getAccessToken(googleAuthConfig);
+  const accessToken = await getAccessToken();
   if (!accessToken) {
     return res.status(401).json({ 
       error: 'Google token refresh failed. Ensure a Refresh Token is provided via environment variables or the configuration modal.',
@@ -143,6 +136,11 @@ app.post(['/api/blogger/publish', '/blogger/publish'], async (req, res) => {
     console.error('[Backend] Exception publishing:', error);
     return res.status(500).json({ error: error.message });
   }
+});
+
+// Catch-all for API routes to return JSON instead of HTML
+app.all('/api/*', (req, res) => {
+  res.status(404).json({ error: `Route ${req.method} ${req.url} not found` });
 });
 
 // Setup Vite dev middleware or static serving

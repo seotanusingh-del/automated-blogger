@@ -61,7 +61,6 @@ import { LoginPage } from './components/LoginPage';
 import { InactivityLockModal } from './components/InactivityLockModal';
 import { ReviewQueueManager } from './components/ReviewQueueManager';
 import { BloggerSubSettingsTab } from './components/BloggerSubSettingsTab';
-import { BackendConfigModal } from './components/BackendConfigModal';
 import { generateDeepSeekContent, generateFreeAiImageUrl, BlogPostContent } from './services/deepseek';
 import { getRecentPosts, savePostToSupabase } from './services/supabase';
 
@@ -81,11 +80,6 @@ export default function App() {
   // Backend Connection State
   const [isBackendConnected, setIsBackendConnected] = useState<boolean>(false);
   const [publishSecret, setPublishSecret] = useState<string>(() => localStorage.getItem('easyflight_publish_secret') || '');
-  const [googleAuthConfig, setGoogleAuthConfig] = useState<any>(() => {
-    const saved = localStorage.getItem('easyflight_google_config');
-    return saved ? JSON.parse(saved) : {};
-  });
-  const [showConfigModal, setShowConfigModal] = useState<boolean>(false);
 
   // Target Blogger ID
   const [blogId, setBlogId] = useState<string>(() => {
@@ -302,8 +296,7 @@ export default function App() {
 
   // Backend connection status check
   useEffect(() => {
-    const params = new URLSearchParams(googleAuthConfig);
-    fetch(`/api/status?${params.toString()}`)
+    fetch(`/api/status`)
       .then(r => r.json())
       .then(data => {
         setIsBackendConnected(!!data.connected);
@@ -311,7 +304,7 @@ export default function App() {
       .catch(() => {
         setIsBackendConnected(false);
       });
-  }, [googleAuthConfig]);
+  }, []);
 
 
 
@@ -748,10 +741,9 @@ export default function App() {
     const targetPost = generatedPosts[index];
     if (!targetPost) return;
 
-    if (!publishSecret && !googleAuthConfig.refresh_token) {
-      setShowConfigModal(true);
-      setStatusMessage('Please configure your credentials in the Backend Config modal.');
-      return;
+    if (!publishSecret) {
+      // In production/Vercel, we might just rely on the server having the secret
+      // But for preview testing, we keep the publishSecret field for the header
     }
 
     setIsPublishing(true);
@@ -775,8 +767,7 @@ export default function App() {
           customMetaData: targetPost.bloggerSettings?.searchDescription,
           location: targetPost.bloggerSettings?.location,
           readerComments: targetPost.bloggerSettings?.readerComments,
-          isDraft: false,
-          googleAuthConfig: googleAuthConfig
+          isDraft: false
         })
       });
 
@@ -822,9 +813,8 @@ export default function App() {
       return;
     }
 
-    if (!publishSecret && !googleAuthConfig.refresh_token) {
-      setShowConfigModal(true);
-      setStatusMessage('Please configure your credentials to enable bulk publishing.');
+    if (!publishSecret) {
+      setStatusMessage('Please configure your Publish Secret to enable bulk publishing.');
       return;
     }
 
@@ -857,8 +847,7 @@ export default function App() {
             customMetaData: postToPublish.bloggerSettings?.searchDescription,
             location: postToPublish.bloggerSettings?.location,
             readerComments: postToPublish.bloggerSettings?.readerComments,
-            isDraft: false,
-            googleAuthConfig: googleAuthConfig
+            isDraft: false
           })
         });
 
@@ -961,18 +950,24 @@ export default function App() {
             <span className={`w-2 h-2 rounded-full ${isBackendConnected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
           </div>
 
-          {/* Backend Config Button */}
+          {/* Publish Secret Config Button */}
           <button
-            onClick={() => setShowConfigModal(true)}
+            onClick={() => {
+              const secret = prompt('Enter PUBLISH_SECRET for this session:', publishSecret);
+              if (secret !== null) {
+                setPublishSecret(secret.trim());
+                localStorage.setItem('easyflight_publish_secret', secret.trim());
+              }
+            }}
             className={`p-2 rounded-lg border text-xs flex items-center gap-1.5 transition ${
-              (publishSecret || googleAuthConfig.refresh_token)
+              publishSecret
                 ? (isDarkMode ? 'bg-emerald-950/20 border-emerald-800 text-emerald-400' : 'bg-emerald-50 border-emerald-200 text-emerald-600')
                 : (isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-white border-slate-300 text-slate-700')
             }`}
-            title="Configure Publish Secret and Google OAuth for testing"
+            title="Configure Publish Secret for authentication"
           >
-            <Settings className="w-3.5 h-3.5" />
-            <span className="font-semibold">Backend Config</span>
+            <Lock className="w-3.5 h-3.5" />
+            <span className="font-semibold">{publishSecret ? 'Secret Set' : 'Set Secret'}</span>
           </button>
 
           {/* Light / Dark Mode Toggle Button */}
@@ -1855,21 +1850,6 @@ export default function App() {
         onSave={(updated) => setAirlines(updated)}
       />
 
-      {/* Backend Config Modal */}
-      <BackendConfigModal
-        isOpen={showConfigModal}
-        onClose={() => setShowConfigModal(false)}
-        isDarkMode={isDarkMode}
-        currentConfig={{ publishSecret, googleAuthConfig }}
-        onSave={(config) => {
-          setPublishSecret(config.publishSecret);
-          setGoogleAuthConfig(config.googleAuthConfig);
-          localStorage.setItem('easyflight_publish_secret', config.publishSecret);
-          localStorage.setItem('easyflight_google_config', JSON.stringify(config.googleAuthConfig));
-          setStatusMessage('Configuration updated!');
-          setTimeout(() => setStatusMessage(null), 3000);
-        }}
-      />
 
 
 
