@@ -93,4 +93,5 @@ export interface GeneratedPost {
   sections?: PostSections;
   bloggerSettings?: BloggerSubSettings;
   verified?: boolean;
+  isAiGenerated?: boolean;
 }

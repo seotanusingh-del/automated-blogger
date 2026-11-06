@@ -61,6 +61,7 @@ import { LoginPage } from './components/LoginPage';
 import { InactivityLockModal } from './components/InactivityLockModal';
 import { ReviewQueueManager } from './components/ReviewQueueManager';
 import { BloggerSubSettingsTab } from './components/BloggerSubSettingsTab';
+import { RefreshTokenModal } from './components/RefreshTokenModal';
 import { 
   generateDeepSeekContent, 
   generateFreeAiImageUrl, 
@@ -87,6 +88,8 @@ export default function App() {
   const [isBackendConnected, setIsBackendConnected] = useState<boolean>(false);
   const [publishSecret, setPublishSecret] = useState<string>(() => localStorage.getItem('easyflight_publish_secret') || '');
   const [deepSeekKey, setDeepSeekKey] = useState<string>(() => getDeepSeekApiKey());
+  const [customRefreshToken, setCustomRefreshToken] = useState<string>(() => localStorage.getItem('easyflight_google_refresh_token') || '');
+  const [showRefreshTokenModal, setShowRefreshTokenModal] = useState<boolean>(false);
 
   // Target Blogger ID
   const [blogId, setBlogId] = useState<string>(() => {
@@ -303,7 +306,8 @@ export default function App() {
 
   // Backend connection status check
   useEffect(() => {
-    fetch(`/api/status`)
+    const query = customRefreshToken ? `?refreshToken=${encodeURIComponent(customRefreshToken)}` : '';
+    fetch(`/api/status${query}`)
       .then(r => r.json())
       .then(data => {
         setIsBackendConnected(!!data.connected);
@@ -311,7 +315,7 @@ export default function App() {
       .catch(() => {
         setIsBackendConnected(false);
       });
-  }, []);
+  }, [customRefreshToken]);
 
 
 
@@ -506,7 +510,8 @@ export default function App() {
         sections: updatedSections,
         htmlContent: updatedHtml,
         status: 'Ready',
-        verified: true
+        verified: true,
+        isAiGenerated: true
       };
 
       const finalPosts = [...generatedPosts];
@@ -515,7 +520,7 @@ export default function App() {
       setStatusMessage(`AI Generation Complete for ${post.airlineName}!`);
     } catch (error) {
       console.error('AI Generation failed:', error);
-      setStatusMessage('AI Generation failed. Check console for details.');
+      setStatusMessage('AI Generation failed. Check console or DeepSeek key.');
       const fallbackPosts = [...generatedPosts];
       fallbackPosts[index] = { ...post, status: 'Error' };
       setGeneratedPosts(fallbackPosts);
@@ -525,31 +530,111 @@ export default function App() {
   };
 
   const handleGenerateBulkAI = async () => {
+    if (selectedAirlines.length === 0 || isGeneratingBulk) return;
     setIsGeneratingBulk(true);
-    setStatusMessage(`Starting AI Content Generation for ${selectedAirlines.length} airlines...`);
-    
-    // First generate the base skeleton
-    handleGenerateBulkPosts();
-    
-    // Then sequentially update with AI content (to avoid rate limits or heavy concurrent load)
-    // We'll do them in a loop
-  };
+    setStatusMessage(`Synthesizing base posts for ${selectedAirlines.length} airlines...`);
 
-  // Effect to handle bulk AI generation after base queue is ready
-  useEffect(() => {
-    if (isGeneratingBulk && generatedPosts.length > 0 && generatedPosts.every(p => p.status === 'Ready' && !p.verified)) {
-       const processQueue = async () => {
-         for (let i = 0; i < generatedPosts.length; i++) {
-           setBulkProgress({ current: i + 1, total: generatedPosts.length, currentTitle: `AI: ${generatedPosts[i].airlineName}` });
-           await handleGenerateAIPost(i);
-         }
-         setIsGeneratingBulk(false);
-         setBulkProgress(null);
-         setStatusMessage('Bulk AI Generation Complete!');
-       };
-       processQueue();
+    const currentTheme = isDarkMode ? 'dark' : 'light';
+    const baseQueue: GeneratedPost[] = [];
+
+    selectedAirlines.forEach((airline: AirlineItem) => {
+      const officesToProcess: AirlineOffice[] = airline.offices.length > 0 
+        ? airline.offices 
+        : [{ id: `${airline.id}-hq`, name: `${airline.name} Headquarters`, city: 'Headquarters', country: 'United States' }];
+
+      officesToProcess.forEach((office: AirlineOffice) => {
+        const post = generateOfficeBlogPost(
+          airline,
+          office,
+          targetKeyword,
+          commonTfn,
+          undefined,
+          socialLinks,
+          currentTheme
+        );
+        baseQueue.push(post);
+      });
+    });
+
+    setGeneratedPosts(baseQueue);
+    setCurrentPostIndex(0);
+
+    const workingPosts = [...baseQueue];
+    for (let i = 0; i < workingPosts.length; i++) {
+      const post = workingPosts[i];
+      setBulkProgress({ 
+        current: i + 1, 
+        total: workingPosts.length, 
+        currentTitle: `Writing AI Guide: ${post.airlineName} (${post.city})` 
+      });
+      setStatusMessage(`[${i + 1}/${workingPosts.length}] Generating unique DeepSeek content for ${post.airlineName} - ${post.city}...`);
+
+      try {
+        const history = await getRecentPosts(post.airlineName, post.city);
+        const aiContent = await generateDeepSeekContent(
+          post.airlineName,
+          post.city,
+          post.country,
+          post.keyword || targetKeyword,
+          post.tfnNumber,
+          history
+        );
+
+        const aiImageUrl = generateFreeAiImageUrl(`${post.airlineName} airline office in ${post.city} travel photography`);
+
+        const updatedSections: PostSections = {
+          ...(post.sections || {
+            urgentCalloutTitle: '24/7 Priority Travel Assistance & Dispute Helpline',
+            urgentCalloutDesc: `Need immediate assistance with your ${post.airlineName} dispute at ${post.city}?`,
+            overviewPara1: '',
+            overviewPara2: '',
+            officeHours: '24/7',
+            officeAddress: post.officeName,
+            servicesList: [],
+            faqs: []
+          }),
+          overviewPara1: aiContent.overview.split('\n\n')[0] || aiContent.overview,
+          overviewPara2: aiContent.overview.split('\n\n')[1] || '',
+          servicesList: aiContent.services,
+          faqs: aiContent.faqs
+        };
+
+        const updatedHtml = buildHtmlFromSections(
+          aiContent.title,
+          aiImageUrl,
+          post.tfnNumber,
+          post.airlineName,
+          post.officeName,
+          post.city,
+          post.country,
+          updatedSections,
+          post.socialLinks || socialLinks,
+          post.bloggerSettings
+        );
+
+        const finalPost: GeneratedPost = {
+          ...post,
+          title: aiContent.title,
+          imageUrl: aiImageUrl,
+          sections: updatedSections,
+          htmlContent: updatedHtml,
+          status: 'Ready',
+          verified: true,
+          isAiGenerated: true
+        };
+
+        workingPosts[i] = finalPost;
+        setGeneratedPosts([...workingPosts]);
+      } catch (err: any) {
+        console.error(`AI generation failed for ${post.airlineName} ${post.city}:`, err);
+      }
     }
-  }, [isGeneratingBulk, generatedPosts.length]);
+
+    setIsGeneratingBulk(false);
+    setBulkProgress(null);
+    setStatusMessage(`Bulk AI Generation Complete! ${workingPosts.length} posts generated with unique DeepSeek content.`);
+    setTimeout(() => setStatusMessage(null), 5000);
+  };
 
   // Easy Non-Technical Section Update
   const handleUpdateSection = (field: keyof PostSections, value: any) => {
@@ -748,11 +833,6 @@ export default function App() {
     const targetPost = generatedPosts[index];
     if (!targetPost) return;
 
-    if (!publishSecret) {
-      // In production/Vercel, we might just rely on the server having the secret
-      // But for preview testing, we keep the publishSecret field for the header
-    }
-
     setIsPublishing(true);
     setStatusMessage(`Publishing "${targetPost.title}" to Blogger...`);
     setAuthorInviteNotice(null);
@@ -760,8 +840,10 @@ export default function App() {
     try {
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${publishSecret}`
       };
+      if (publishSecret && publishSecret.trim()) {
+        headers['Authorization'] = `Bearer ${publishSecret.trim()}`;
+      }
 
       const res = await fetch('/api/blogger/publish', {
         method: 'POST',
@@ -774,7 +856,8 @@ export default function App() {
           customMetaData: targetPost.bloggerSettings?.searchDescription,
           location: targetPost.bloggerSettings?.location,
           readerComments: targetPost.bloggerSettings?.readerComments,
-          isDraft: false
+          isDraft: false,
+          refreshToken: customRefreshToken || undefined
         })
       });
 
@@ -795,7 +878,12 @@ export default function App() {
           city: targetPost.city
         });
       } else {
-        setStatusMessage(`Publish status: ${data.error || 'Check Blogger Author Permissions'}`);
+        if (data.code === 'REFRESH_TOKEN_EXPIRED' || data.code === 'MISSING_REFRESH_TOKEN' || data.needsConfig) {
+          setShowRefreshTokenModal(true);
+          setStatusMessage('Google Refresh Token expired or missing. Please paste a valid token in the modal.');
+        } else {
+          setStatusMessage(`Publish status: ${data.error || 'Check Blogger Author Permissions'}`);
+        }
       }
     } catch (e: any) {
       setStatusMessage(`Error: ${e.message}`);
@@ -820,18 +908,15 @@ export default function App() {
       return;
     }
 
-    if (!publishSecret) {
-      setStatusMessage('Please configure your Publish Secret to enable bulk publishing.');
-      return;
-    }
-
     setIsPublishing(true);
     setAuthorInviteNotice(null);
 
     const headers: Record<string, string> = { 
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${publishSecret}`
     };
+    if (publishSecret && publishSecret.trim()) {
+      headers['Authorization'] = `Bearer ${publishSecret.trim()}`;
+    }
     const updatedQueue = [...generatedPosts];
 
     for (let i = 0; i < verifiedIndices.length; i++) {
@@ -854,7 +939,8 @@ export default function App() {
             customMetaData: postToPublish.bloggerSettings?.searchDescription,
             location: postToPublish.bloggerSettings?.location,
             readerComments: postToPublish.bloggerSettings?.readerComments,
-            isDraft: false
+            isDraft: false,
+            refreshToken: customRefreshToken || undefined
           })
         });
 
@@ -875,6 +961,11 @@ export default function App() {
             city: postToPublish.city
           });
         } else {
+          if (data.code === 'REFRESH_TOKEN_EXPIRED' || data.code === 'MISSING_REFRESH_TOKEN' || data.needsConfig) {
+            setShowRefreshTokenModal(true);
+            setStatusMessage('Google Refresh Token expired or missing. Please update it in the modal.');
+            break;
+          }
           updatedQueue[idx] = {
             ...postToPublish,
             status: 'Error'
@@ -942,28 +1033,54 @@ export default function App() {
         {/* Right Header: Service Account Badge, Theme Switcher, Website/Social Links, Account, Lock */}
         <div className="flex items-center gap-3">
           
-          {/* Connection Status Badge */}
-          <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold transition ${
+          {/* Connection Status Badge (Clickable to inspect/update token) */}
+          <button
+            onClick={() => setShowRefreshTokenModal(true)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold transition cursor-pointer ${
             isBackendConnected
               ? isDarkMode
-                ? 'bg-emerald-950/40 border-emerald-800 text-emerald-400'
-                : 'bg-emerald-50 border-emerald-300 text-emerald-700'
+                ? 'bg-emerald-950/40 border-emerald-800 text-emerald-400 hover:bg-emerald-950/60'
+                : 'bg-emerald-50 border-emerald-300 text-emerald-700 hover:bg-emerald-100'
               : isDarkMode
-                ? 'bg-amber-950/40 border-amber-800 text-amber-400'
-                : 'bg-amber-50 border-amber-300 text-amber-700'
-          }`}>
+                ? 'bg-amber-950/40 border-amber-800 text-amber-400 hover:bg-amber-950/60'
+                : 'bg-amber-50 border-amber-300 text-amber-700 hover:bg-amber-100'
+          }`}
+            title="Click to view or update Google Blogger Refresh Token"
+          >
             <Globe className="w-3.5 h-3.5" />
-            <span>{isBackendConnected ? 'Google API Connected' : 'Google Auth Needed'}</span>
+            <span>{isBackendConnected ? 'Google Connected' : 'Google Token Needed'}</span>
             <span className={`w-2 h-2 rounded-full ${isBackendConnected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
-          </div>
+          </button>
+
+          {/* Google Refresh Token Button */}
+          <button
+            onClick={() => setShowRefreshTokenModal(true)}
+            className={`p-2 rounded-lg border text-xs flex items-center gap-1.5 transition ${
+              (isBackendConnected || customRefreshToken)
+                ? (isDarkMode ? 'bg-amber-950/20 border-amber-800 text-amber-400' : 'bg-amber-50 border-amber-200 text-amber-600')
+                : (isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-white border-slate-300 text-slate-700')
+            }`}
+            title="Configure or refresh your Google OAuth Refresh Token"
+          >
+            <Key className="w-3.5 h-3.5" />
+            <span className="font-semibold">{customRefreshToken ? 'Custom Token' : 'Google Token'}</span>
+          </button>
 
           {/* Publish Secret Config Button */}
           <button
             onClick={() => {
-              const secret = prompt('Enter PUBLISH_SECRET for this session:', publishSecret);
+              const msg = `Publishing from this dashboard is already authorized automatically!\n\nYou do NOT need to enter any PUBLISH_SECRET to publish posts.\n\n(PUBLISH_SECRET is an optional environment variable you can set in Vercel to protect your backend endpoint against external webhook abuse).\n\nCurrent Secret: ${publishSecret ? 'Configured' : 'None (Using default built-in auth)'}\n\nEnter custom secret or leave blank:`;
+              const secret = prompt(msg, publishSecret);
               if (secret !== null) {
                 setPublishSecret(secret.trim());
-                localStorage.setItem('easyflight_publish_secret', secret.trim());
+                if (secret.trim()) {
+                  localStorage.setItem('easyflight_publish_secret', secret.trim());
+                  setStatusMessage('Custom Publish Secret saved.');
+                } else {
+                  localStorage.removeItem('easyflight_publish_secret');
+                  setStatusMessage('Publish Secret cleared (Using auto-authorization).');
+                }
+                setTimeout(() => setStatusMessage(null), 3000);
               }
             }}
             className={`p-2 rounded-lg border text-xs flex items-center gap-1.5 transition ${
@@ -971,20 +1088,23 @@ export default function App() {
                 ? (isDarkMode ? 'bg-emerald-950/20 border-emerald-800 text-emerald-400' : 'bg-emerald-50 border-emerald-200 text-emerald-600')
                 : (isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-white border-slate-300 text-slate-700')
             }`}
-            title="Configure Publish Secret for authentication"
+            title="Publishing is automatically authorized. Click for webhook info."
           >
             <Lock className="w-3.5 h-3.5" />
-            <span className="font-semibold">{publishSecret ? 'Secret Set' : 'Set Secret'}</span>
+            <span className="font-semibold">{publishSecret ? 'Secret Set' : 'Publish: Auto-Auth'}</span>
           </button>
 
           {/* DeepSeek Key Config Button */}
           <button
             onClick={() => {
-              const key = prompt('Enter DeepSeek API Key (sk-...) for AI blog generation:', deepSeekKey);
+              const key = prompt(
+                'Enter DeepSeek API Key (sk-...) to save locally in your browser.\n\nTip: You can also set DEEPSEEK_API_KEY in your Vercel Environment Variables so you never have to paste it here!',
+                deepSeekKey
+              );
               if (key !== null) {
                 setDeepSeekApiKey(key.trim());
                 setDeepSeekKey(key.trim());
-                setStatusMessage(key.trim() ? 'DeepSeek API Key updated!' : 'DeepSeek API Key cleared.');
+                setStatusMessage(key.trim() ? 'DeepSeek API Key updated!' : 'DeepSeek API Key cleared (will use server env).');
                 setTimeout(() => setStatusMessage(null), 3000);
               }
             }}
@@ -993,7 +1113,7 @@ export default function App() {
                 ? (isDarkMode ? 'bg-sky-950/20 border-sky-800 text-sky-400' : 'bg-sky-50 border-sky-200 text-sky-600')
                 : (isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-white border-slate-300 text-slate-700')
             }`}
-            title="Configure DeepSeek API Key for AI blog generation"
+            title="Configure DeepSeek API Key (or set DEEPSEEK_API_KEY in Vercel)"
           >
             <Sparkles className="w-3.5 h-3.5" />
             <span className="font-semibold">{deepSeekKey ? 'AI Key Set' : 'Set AI Key'}</span>
@@ -1217,21 +1337,23 @@ export default function App() {
                 <button
                   onClick={handleGenerateBulkPosts}
                   disabled={isGeneratingBulk || selectedAirlines.length === 0}
-                  className={`px-4 py-2.5 rounded-xl border font-bold text-xs transition flex items-center gap-2 flex-1 justify-center ${
-                    isDarkMode ? 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700' : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-300'
+                  className={`px-3 py-2.5 rounded-xl border font-semibold text-xs transition flex items-center gap-1.5 flex-1 justify-center ${
+                    isDarkMode ? 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700' : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-300'
                   }`}
+                  title="Generate base template drafts without using AI tokens"
                 >
-                  <RefreshCw className={`w-4 h-4 ${isGeneratingBulk && !bulkProgress ? 'animate-spin' : ''}`} />
-                  {isGeneratingBulk && !bulkProgress ? 'Synthesizing...' : 'Draft Bulk'}
+                  <RefreshCw className={`w-3.5 h-3.5 ${isGeneratingBulk && !bulkProgress ? 'animate-spin' : ''}`} />
+                  {isGeneratingBulk && !bulkProgress ? 'Synthesizing...' : 'Draft (Template)'}
                 </button>
 
                 <button
                   onClick={handleGenerateBulkAI}
                   disabled={isGeneratingBulk || selectedAirlines.length === 0}
-                  className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-bold transition flex items-center gap-2 flex-1 justify-center shadow"
+                  className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-bold transition flex items-center gap-1.5 flex-1 justify-center shadow"
+                  title="Generate 100% unique, human-grade SEO articles using DeepSeek AI"
                 >
                   <Sparkles className={`w-4 h-4 ${isGeneratingBulk && bulkProgress ? 'animate-spin' : ''}`} />
-                  {isGeneratingBulk && bulkProgress ? 'AI Generating...' : 'Bulk AI Magic'}
+                  {isGeneratingBulk && bulkProgress ? 'DeepSeek Writing...' : '✨ Bulk AI Magic (DeepSeek)'}
                 </button>
               </div>
 
@@ -1393,13 +1515,23 @@ export default function App() {
                     <div className="flex items-center gap-2 truncate">
                       <span className="font-bold">Headline:</span>
                       <span className="truncate max-w-sm font-medium">{activePost.title}</span>
+                      {activePost.isAiGenerated ? (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20 flex items-center gap-1 shrink-0">
+                          <Sparkles className="w-2.5 h-2.5" /> DeepSeek AI
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 shrink-0" title="This post currently uses the template skeleton. Click 'Generate with DeepSeek' to rewrite it with AI.">
+                          Template Draft
+                        </span>
+                      )}
                     </div>
                     <div className="flex items-center gap-2">
                       <button
                         onClick={() => handleGenerateAIPost(currentPostIndex)}
                         className="bg-emerald-600 hover:bg-emerald-500 text-white px-2.5 py-1 rounded flex items-center gap-1 font-bold text-[11px] shadow-sm transition"
+                        title="Rewrite this blog post with 100% unique DeepSeek AI content"
                       >
-                        <Sparkles className="w-3.5 h-3.5" /> AI Rewrite
+                        <Sparkles className="w-3.5 h-3.5" /> Generate with DeepSeek
                       </button>
                       <button
                         onClick={handleRegenerateBanner}
@@ -1879,10 +2011,23 @@ export default function App() {
         onSave={(updated) => setAirlines(updated)}
       />
 
-
-
-
-      {/* Inactivity Lock Modal (10 Minutes Timeout) */}
+      {/* Google Refresh Token Modal */}
+      <RefreshTokenModal
+        isOpen={showRefreshTokenModal}
+        onClose={() => setShowRefreshTokenModal(false)}
+        isDarkMode={isDarkMode}
+        currentToken={customRefreshToken}
+        onSave={(token) => {
+          setCustomRefreshToken(token);
+          if (token) {
+            localStorage.setItem('easyflight_google_refresh_token', token);
+          } else {
+            localStorage.removeItem('easyflight_google_refresh_token');
+          }
+          setStatusMessage(token ? 'Google Refresh Token saved!' : 'Google Refresh Token cleared.');
+          setTimeout(() => setStatusMessage(null), 3000);
+        }}
+      />
       <InactivityLockModal
         isOpen={isSessionLocked}
         onUnlock={() => {

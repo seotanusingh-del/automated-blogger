@@ -266,6 +266,15 @@ export const ReviewQueueManager: React.FC<ReviewQueueManagerProps> = ({
                           Published
                         </span>
                       )}
+                      {post.isAiGenerated ? (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20 flex items-center gap-1">
+                          <Sparkles className="w-2.5 h-2.5" /> DeepSeek AI
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-500/10 text-slate-500 dark:text-slate-400 border border-slate-500/20">
+                          Template Draft
+                        </span>
+                      )}
                       {isVerified && !isPublished && (
                         <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-500/20">
                           Verified &amp; Ready
