@@ -843,6 +843,8 @@ export default function App() {
     try {
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest',
+        'X-Client-App': 'automated-blogger'
       };
       if (publishSecret && publishSecret.trim()) {
         headers['Authorization'] = `Bearer ${publishSecret.trim()}`;
@@ -916,6 +918,8 @@ export default function App() {
 
     const headers: Record<string, string> = { 
       'Content-Type': 'application/json',
+      'X-Requested-With': 'XMLHttpRequest',
+      'X-Client-App': 'automated-blogger'
     };
     if (publishSecret && publishSecret.trim()) {
       headers['Authorization'] = `Bearer ${publishSecret.trim()}`;

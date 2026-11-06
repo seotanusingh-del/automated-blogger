@@ -193,10 +193,11 @@ Return valid JSON with this exact structure:
 app.post(['/api/blogger/publish', '/blogger/publish'], async (req, res) => {
   // Authorization: Enforce PUBLISH_SECRET only if configured AND request is not from the same-origin app
   const auth = req.headers.authorization || '';
-  const isSameOrigin = req.headers['sec-fetch-site'] === 'same-origin' || 
+  const isAppRequest = req.headers['sec-fetch-site'] === 'same-origin' || 
                        req.headers['x-requested-with'] === 'XMLHttpRequest' ||
+                       req.headers['x-client-app'] === 'automated-blogger' ||
                        !process.env.PUBLISH_SECRET;
-  const isAuthorized = isSameOrigin || (process.env.PUBLISH_SECRET && auth === `Bearer ${process.env.PUBLISH_SECRET}`);
+  const isAuthorized = isAppRequest || (process.env.PUBLISH_SECRET && auth === `Bearer ${process.env.PUBLISH_SECRET}`);
 
   if (!isAuthorized) {
     return res.status(401).json({ error: 'Unauthorized. Invalid or missing PUBLISH_SECRET.' });

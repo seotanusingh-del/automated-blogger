@@ -53,9 +53,9 @@ export function generateOfficeBannerSvg(
       </g>
 
       <g transform="translate(80, 75)">
-        <rect width="360" height="42" rx="21" fill="#ffffff" stroke="#bae6fd" stroke-width="1.5" filter="url(#shadow)"/>
-        <text x="180" y="26" fill="#0369a1" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="14" font-weight="700" text-anchor="middle" letter-spacing="1">
-          AIRLINE HELPLINE &amp; DISPUTE DIRECTORY
+        <rect width="400" height="42" rx="21" fill="#ffffff" stroke="#bae6fd" stroke-width="1.5" filter="url(#shadow)"/>
+        <text x="200" y="26" fill="#0369a1" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="13" font-weight="700" text-anchor="middle" letter-spacing="1">
+          AIRLINE OFFICE DIRECTORY &amp; TRAVEL GUIDE
         </text>
       </g>
       
@@ -64,7 +64,7 @@ export function generateOfficeBannerSvg(
       </text>
       
       <text x="80" y="250" fill="#0f172a" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="50" font-weight="800">
-        ${escapeXml(city)} Support Desk &amp; Dispute Guide
+        ${escapeXml(city)} Airport Office &amp; Passenger Guide
       </text>
 
       <text x="80" y="305" fill="#475569" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="22" font-weight="500">
@@ -73,20 +73,20 @@ export function generateOfficeBannerSvg(
       
       <g transform="translate(80, 360)">
         <text x="0" y="0" fill="#1e293b" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="20" font-weight="600">
-          ✓ Official Complaint Filing, Compensation &amp; Refund Escalations
+          ✓ Airport Terminal Desks, Check-In Windows &amp; Hours
         </text>
         <text x="0" y="38" fill="#1e293b" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="20" font-weight="600">
-          ✓ 24/7 Priority Ticket Booking, Seat Changes &amp; Flight Re-routing
+          ✓ Flight Reservations, Ticket Rebooking &amp; Schedule Updates
         </text>
         <text x="0" y="76" fill="#1e293b" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="20" font-weight="600">
-          ✓ Lost Baggage PIR Tracking &amp; Airport Terminal Counters
+          ✓ Lost Baggage PIR Tracking &amp; US DOT Passenger Rights
         </text>
       </g>
 
       <g transform="translate(80, 480)">
         <rect width="520" height="74" rx="37" fill="url(#tfnLightBtn)" filter="url(#shadow)"/>
-        <text x="260" y="32" fill="#e0f2fe" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="13" font-weight="700" text-anchor="middle" letter-spacing="1">
-          CALL TOLL-FREE 24/7 RESOLUTIONS &amp; BOOKING
+        <text x="260" y="32" fill="#e0f2fe" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="12" font-weight="700" text-anchor="middle" letter-spacing="1">
+          24/7 PASSENGER SUPPORT &amp; BOOKING DESK
         </text>
         <text x="260" y="58" fill="#ffffff" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="25" font-weight="900" text-anchor="middle">
           ${escapeXml(tfnNumber)}
@@ -121,9 +121,9 @@ export function generateOfficeBannerSvg(
       </g>
 
       <g transform="translate(80, 80)">
-        <rect width="360" height="40" rx="20" fill="rgba(255,255,255,0.12)" stroke="${brandAccent}" stroke-width="1.5"/>
-        <text x="180" y="25" fill="#ffffff" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="14" font-weight="700" text-anchor="middle" letter-spacing="1">
-          AIRLINE HELPLINE &amp; DISPUTE DIRECTORY
+        <rect width="400" height="40" rx="20" fill="rgba(255,255,255,0.12)" stroke="${brandAccent}" stroke-width="1.5"/>
+        <text x="200" y="25" fill="#ffffff" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="13" font-weight="700" text-anchor="middle" letter-spacing="1">
+          AIRLINE OFFICE DIRECTORY &amp; TRAVEL GUIDE
         </text>
       </g>
       
@@ -132,7 +132,7 @@ export function generateOfficeBannerSvg(
       </text>
       
       <text x="80" y="250" fill="#ffffff" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="50" font-weight="800">
-        ${escapeXml(city)} Support Desk &amp; Dispute Guide
+        ${escapeXml(city)} Airport Office &amp; Passenger Guide
       </text>
 
       <text x="80" y="310" fill="#cbd5e1" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="22">
@@ -141,20 +141,20 @@ export function generateOfficeBannerSvg(
       
       <g transform="translate(80, 360)">
         <text x="0" y="0" fill="#e2e8f0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="20">
-          ✓ Official Complaint Filing, Compensation &amp; Refund Escalations
+          ✓ Airport Terminal Desks, Check-In Windows &amp; Hours
         </text>
         <text x="0" y="38" fill="#e2e8f0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="20">
-          ✓ 24/7 Priority Ticket Booking, Seat Changes &amp; Flight Re-routing
+          ✓ Flight Reservations, Ticket Rebooking &amp; Schedule Updates
         </text>
         <text x="0" y="76" fill="#e2e8f0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="20">
-          ✓ Lost Baggage PIR Tracking &amp; Airport Terminal Counters
+          ✓ Lost Baggage PIR Tracking &amp; US DOT Passenger Rights
         </text>
       </g>
 
       <g transform="translate(80, 480)">
         <rect width="520" height="74" rx="37" fill="url(#tfnDarkBtn)"/>
-        <text x="260" y="34" fill="#ffffff" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="14" font-weight="700" text-anchor="middle" letter-spacing="1">
-          CALL 24/7 TOLL-FREE SUPPORT
+        <text x="260" y="34" fill="#ffffff" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="13" font-weight="700" text-anchor="middle" letter-spacing="1">
+          24/7 PASSENGER SUPPORT &amp; BOOKING DESK
         </text>
         <text x="260" y="60" fill="#ffffff" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="26" font-weight="900" text-anchor="middle">
           ${escapeXml(tfnNumber)}
@@ -388,15 +388,15 @@ ${schemaHtml}
 </div>
 
 <div style="background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%); color: #ffffff; padding: 22px 26px; border-radius: 12px; margin: 24px 0; box-shadow: 0 4px 16px rgba(2,132,199,0.3); border-left: 6px solid #ff9500;">
-  <div style="font-size: 14px; text-transform: uppercase; letter-spacing: 1px; color: #ffeb3b; font-weight: bold; margin-bottom: 6px;">
-    🚨 ${escapeXml(sections.urgentCalloutTitle)}
+  <div style="font-size: 13px; text-transform: uppercase; letter-spacing: 1.2px; color: #ffeb3b; font-weight: bold; margin-bottom: 6px;">
+    ✈️ 24/7 Independent Passenger Assistance Desk
   </div>
   <p style="margin: 0 0 14px 0; font-size: 15px; line-height: 1.5; color: #ffffff;">
-    ${escapeXml(sections.urgentCalloutDesc)}
+    Need immediate live assistance with ${escapeXml(airlineName)} reservations, ticket rebooking, name corrections, flight cancellations, or passenger terminal guidance? Connect with an independent travel support specialist:
   </p>
   <div style="text-align: center; margin-top: 12px;">
     <a href="tel:${telLink}" style="display: inline-block; background: #e11d48; color: #ffffff; padding: 14px 28px; font-size: 18px; font-weight: bold; text-decoration: none; border-radius: 50px; box-shadow: 0 4px 12px rgba(225,29,72,0.4); border: 2px solid #ffffff;">
-      📞 Call Toll-Free: ${cleanTfn}
+      📞 Call 24/7 Support: ${cleanTfn}
     </a>
   </div>
 </div>
@@ -468,8 +468,8 @@ ${servicesListHtml}
 <h2 id="faq">Frequently Asked Questions (FAQ)</h2>
 ${faqsHtml}
 ${linksHtml}
-<div style="background:#f1f5f9; padding:16px 20px; border-radius:8px; margin:24px 0; border:1px solid #e2e8f0; font-size:13px; color:#475569;">
-  <strong>Disclaimer:</strong> This website is an independent travel resource directory providing passenger guidance, contact numbers, and airline office updates. For official ticketing and carrier regulations, refer to airline policies or speak with a telephone representative at <a href="tel:${telLink}" style="color:#0284c7; font-weight:bold;">${cleanTfn}</a>.
+<div style="background:#f1f5f9; padding:18px 22px; border-radius:10px; margin:28px 0; border:1px solid #e2e8f0; font-size:13px; color:#475569; line-height: 1.6;">
+  <strong>Transparency &amp; Independent Disclaimer:</strong> EasyFlightConnect is an independent online travel information portal providing passenger guides, airport terminal directories, and flight support details. We are not directly affiliated with, sponsored by, or endorsed by ${escapeXml(airlineName)} or any other commercial airline. For official ticket contracts, baggage liability rules, and carrier terms, please refer to the official airline channels or contact our independent customer assistance desk at <a href="tel:${telLink}" style="color:#0284c7; font-weight:bold;">${cleanTfn}</a>.
 </div>`;
 }
 
