@@ -1,0 +1,6 @@
+{
+  "name": "AutoBlog Engine - Airline Office SEO",
+  "description": "Automated SEO tool for generating and publishing airline office blog posts using DeepSeek AI, Pollinations images, and Supabase tracking.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

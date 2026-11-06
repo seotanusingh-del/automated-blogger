@@ -1,0 +1,20 @@
+node_modules/
+build/
+dist/
+coverage/
+.DS_Store
+*.log
+.env*
+!.env.example
+bun.lock
+
+# Exclude private service account credentials, keys & secrets from GitHub
+*.key
+*.pem
+*service-account*.json
+*credentials*.json
+public/assets/aistudio/*.json
+
+# Exclude temporary screenshots and attachments from repository
+public/assets/
+public/assets/**/*

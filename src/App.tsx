@@ -1,0 +1,1942 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { 
+  Plane, 
+  Send, 
+  Copy, 
+  Check, 
+  ExternalLink, 
+  Settings, 
+  RefreshCw, 
+  Search, 
+  Sparkles, 
+  CheckCircle2, 
+  Upload, 
+  UserCheck,
+  ChevronLeft,
+  ChevronRight,
+  Sun,
+  Moon,
+  Share2,
+  Plus,
+  Trash2,
+  ShieldCheck,
+  AlertCircle,
+  Mail,
+  Linkedin,
+  Instagram,
+  Lock,
+  LogOut,
+  Globe,
+  LifeBuoy,
+  MessageCircle,
+  Link as LinkIcon,
+  Tag,
+  MapPin,
+  FileCode,
+  CheckSquare,
+  Square,
+  Sliders,
+  Bot,
+  ListFilter,
+  Eye,
+  Layers,
+  Key,
+  Download
+} from 'lucide-react';
+import { 
+  TARGET_BLOGGER_ID, 
+  TARGET_BLOG_URL,
+  downloadBannerImage
+} from './services/drive';
+import { DEFAULT_AIRLINES } from './data/defaultAirlines';
+import { AirlineItem, AirlineOffice, GeneratedPost, SocialLinks, PostSections, CustomLinkItem, BloggerSubSettings } from './types/airline';
+import { 
+  generateOfficeBlogPost, 
+  generateOfficeBannerSvg,
+  buildHtmlFromSections 
+} from './services/blogGenerator';
+import { getCoordinatesForCity } from './data/cityCoordinates';
+import { AirlineManagerModal } from './components/AirlineManagerModal';
+import { LoginPage } from './components/LoginPage';
+import { InactivityLockModal } from './components/InactivityLockModal';
+import { ReviewQueueManager } from './components/ReviewQueueManager';
+import { BloggerSubSettingsTab } from './components/BloggerSubSettingsTab';
+import { BackendConfigModal } from './components/BackendConfigModal';
+import { generateDeepSeekContent, generateFreeAiImageUrl, BlogPostContent } from './services/deepseek';
+import { getRecentPosts, savePostToSupabase } from './services/supabase';
+
+const INACTIVITY_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
+
+export default function App() {
+  // Authentication & Session Security (Autolocks on page refresh or tab close)
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [isSessionLocked, setIsSessionLocked] = useState<boolean>(false);
+  const lastActivityRef = useRef<number>(Date.now());
+
+  // Theme state - Eye-friendly LIGHT THEME by default
+  const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
+    return localStorage.getItem('easyflight_theme') === 'dark';
+  });
+
+  // Backend Connection State
+  const [isBackendConnected, setIsBackendConnected] = useState<boolean>(false);
+  const [publishSecret, setPublishSecret] = useState<string>(() => localStorage.getItem('easyflight_publish_secret') || '');
+  const [googleAuthConfig, setGoogleAuthConfig] = useState<any>(() => {
+    const saved = localStorage.getItem('easyflight_google_config');
+    return saved ? JSON.parse(saved) : {};
+  });
+  const [showConfigModal, setShowConfigModal] = useState<boolean>(false);
+
+  // Target Blogger ID
+  const [blogId, setBlogId] = useState<string>(() => {
+    const saved = localStorage.getItem('easyflight_session_draft');
+    if (saved) {
+      try { return JSON.parse(saved).blogId || TARGET_BLOGGER_ID; } catch (e) { /* ignore */ }
+    }
+    return TARGET_BLOGGER_ID;
+  });
+
+  // Common TFN Number (Default: +1 (888) 794-3464)
+  const [commonTfn, setCommonTfn] = useState<string>(() => {
+    const saved = localStorage.getItem('easyflight_session_draft');
+    if (saved) {
+      try { return JSON.parse(saved).commonTfn || '+1 (888) 794-3464'; } catch (e) { /* ignore */ }
+    }
+    return '+1 (888) 794-3464';
+  });
+
+  // Keyword / Topic
+  const [targetKeyword, setTargetKeyword] = useState<string>(() => {
+    const saved = localStorage.getItem('easyflight_session_draft');
+    if (saved) {
+      try { return JSON.parse(saved).targetKeyword || 'Office Location, Contact Number & Flight Reservations'; } catch (e) { /* ignore */ }
+    }
+    return 'Office Location, Contact Number & Flight Reservations';
+  });
+
+  const [isWebGroundingEnabled, setIsWebGroundingEnabled] = useState(true);
+
+  // Social & Custom Portal Links
+  const [showSocialModal, setShowSocialModal] = useState(false);
+  const [socialLinks, setSocialLinks] = useState<SocialLinks>(() => {
+    const saved = localStorage.getItem('easyflight_session_draft');
+    if (saved) {
+      try { return JSON.parse(saved).socialLinks || {}; } catch (e) { /* ignore */ }
+    }
+    return {
+      website: '',
+      supportUrl: '',
+      whatsapp: '',
+      facebook: '',
+      twitter: '',
+      instagram: '',
+      linkedin: '',
+      youtube: '',
+      customLinks: []
+    };
+  });
+
+  // Temporary custom link input for modal
+  const [customLinkLabel, setCustomLinkLabel] = useState('');
+  const [customLinkUrl, setCustomLinkUrl] = useState('');
+
+  // Persistent Airlines
+  const [airlines, setAirlines] = useState<AirlineItem[]>(() => {
+    const saved = localStorage.getItem('easyflight_airlines');
+    if (saved) {
+      try { return JSON.parse(saved); } catch (e) { /* ignore */ }
+    }
+    return DEFAULT_AIRLINES;
+  });
+
+  const [isManageModalOpen, setIsManageModalOpen] = useState(false);
+  const [airlineFilter, setAirlineFilter] = useState('');
+
+  // Queue & Review State (Hydrates compact storage or full draft)
+  const [generatedPosts, setGeneratedPosts] = useState<GeneratedPost[]>(() => {
+    const saved = localStorage.getItem('easyflight_session_draft');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (parsed.generatedPosts && parsed.generatedPosts.length > 0) {
+          const theme = localStorage.getItem('easyflight_theme') === 'dark' ? 'dark' : 'light';
+          return parsed.generatedPosts.map((p: any) => {
+            const banner = p.imageUrl && p.imageUrl.trim() && !p.imageUrl.startsWith('data:image/svg')
+              ? p.imageUrl
+              : generateOfficeBannerSvg(p.airlineName, p.officeName, p.city, p.tfnNumber, theme);
+
+            const html = p.htmlContent && p.htmlContent.length > 50
+              ? p.htmlContent
+              : (p.sections ? buildHtmlFromSections(
+                  p.title,
+                  banner,
+                  p.tfnNumber,
+                  p.airlineName,
+                  p.officeName,
+                  p.city,
+                  p.country,
+                  p.sections,
+                  p.socialLinks,
+                  p.bloggerSettings
+                ) : '');
+
+            return {
+              ...p,
+              imageUrl: banner,
+              htmlContent: html
+            };
+          });
+        }
+      } catch (e) {
+        console.warn('Error hydrating draft from localStorage:', e);
+      }
+    }
+    return [];
+  });
+
+  const [currentPostIndex, setCurrentPostIndex] = useState<number>(() => {
+    const saved = localStorage.getItem('easyflight_session_draft');
+    if (saved) {
+      try { return JSON.parse(saved).currentPostIndex || 0; } catch (e) { /* ignore */ }
+    }
+    return 0;
+  });
+
+  const [isGeneratingBulk, setIsGeneratingBulk] = useState(false);
+  const [isPublishing, setIsPublishing] = useState(false);
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [authorInviteNotice, setAuthorInviteNotice] = useState<string | null>(null);
+
+  // Non-technical review mode: 'visual' preview vs 'form' easy editor vs 'settings' Blogger sub-settings vs 'raw' code
+  const [reviewTab, setReviewTab] = useState<'visual' | 'form' | 'settings' | 'raw'>('visual');
+  const [viewMode, setViewMode] = useState<'simulator' | 'queue'>('simulator');
+  const [bulkProgress, setBulkProgress] = useState<{ current: number; total: number; currentTitle?: string } | null>(null);
+
+  const activePost = generatedPosts[currentPostIndex] || null;
+
+  // Safely persist session work to localStorage without exceeding quota
+  useEffect(() => {
+    try {
+      // Create a compact payload omitting massive repetitive SVG data URIs and HTML blobs
+      const compactPosts = generatedPosts.map((p: GeneratedPost) => ({
+        id: p.id,
+        airlineName: p.airlineName,
+        officeName: p.officeName,
+        city: p.city,
+        country: p.country,
+        title: p.title,
+        slug: p.slug,
+        tfnNumber: p.tfnNumber,
+        keyword: p.keyword,
+        status: p.status,
+        publishedUrl: p.publishedUrl,
+        labels: p.labels,
+        verified: p.verified,
+        sections: p.sections,
+        bloggerSettings: p.bloggerSettings,
+        // Only keep external URLs, strip huge SVG data URIs
+        imageUrl: p.imageUrl && !p.imageUrl.startsWith('data:image/svg') ? p.imageUrl : '',
+        // Omit raw HTML since it is reconstructed instantaneously from sections
+        htmlContent: p.sections ? '' : p.htmlContent
+      }));
+
+      const draftPayload = {
+        blogId,
+        commonTfn,
+        targetKeyword,
+        socialLinks,
+        currentPostIndex,
+        generatedPosts: compactPosts
+      };
+      localStorage.setItem('easyflight_session_draft', JSON.stringify(draftPayload));
+    } catch (err) {
+      console.warn('LocalStorage quota limit reached, falling back to saving core settings:', err);
+      try {
+        const minimalPayload = {
+          blogId,
+          commonTfn,
+          targetKeyword,
+          socialLinks,
+          currentPostIndex
+        };
+        localStorage.setItem('easyflight_session_draft', JSON.stringify(minimalPayload));
+      } catch (innerErr) {
+        console.error('Failed to write to localStorage:', innerErr);
+      }
+    }
+  }, [blogId, commonTfn, targetKeyword, socialLinks, currentPostIndex, generatedPosts]);
+
+  // Safely persist airlines to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem('easyflight_airlines', JSON.stringify(airlines));
+    } catch (e) {
+      console.warn('Could not save airlines to localStorage:', e);
+    }
+  }, [airlines]);
+
+  // 10-Minute Inactivity Activity Tracker
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    const resetActivity = () => {
+      lastActivityRef.current = Date.now();
+    };
+
+    const events = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll'];
+    events.forEach(evt => window.addEventListener(evt, resetActivity));
+
+    const interval = setInterval(() => {
+      const elapsed = Date.now() - lastActivityRef.current;
+      if (elapsed >= INACTIVITY_TIMEOUT_MS && !isSessionLocked) {
+        setIsSessionLocked(true);
+      }
+    }, 15000);
+
+    return () => {
+      events.forEach(evt => window.removeEventListener(evt, resetActivity));
+      clearInterval(interval);
+    };
+  }, [isAuthenticated, isSessionLocked]);
+
+  // Backend connection status check
+  useEffect(() => {
+    const params = new URLSearchParams(googleAuthConfig);
+    fetch(`/api/status?${params.toString()}`)
+      .then(r => r.json())
+      .then(data => {
+        setIsBackendConnected(!!data.connected);
+      })
+      .catch(() => {
+        setIsBackendConnected(false);
+      });
+  }, [googleAuthConfig]);
+
+
+
+  // Initial Post Batch on Mount - Populate all offices of selected airlines (e.g. 40+ posts)
+  useEffect(() => {
+    if (generatedPosts.length === 0 && airlines.length > 0) {
+      const activeAirlines = airlines.filter((a: AirlineItem) => a.selected);
+      const toProcess = activeAirlines.length > 0 ? activeAirlines : [airlines[0]];
+      const initialBatch: GeneratedPost[] = [];
+      const currentTheme = isDarkMode ? 'dark' : 'light';
+
+      toProcess.forEach((airline: AirlineItem) => {
+        const officesToProcess: AirlineOffice[] = airline.offices.length > 0 
+          ? airline.offices 
+          : [{ id: `${airline.id}-hq`, name: `${airline.name} Headquarters`, city: 'Headquarters', country: 'United States' }];
+
+        officesToProcess.forEach((office: AirlineOffice) => {
+          initialBatch.push(
+            generateOfficeBlogPost(
+              airline,
+              office,
+              targetKeyword,
+              commonTfn,
+              undefined,
+              socialLinks,
+              currentTheme
+            )
+          );
+        });
+      });
+
+      setGeneratedPosts(initialBatch);
+      setCurrentPostIndex(0);
+    }
+  }, []);
+
+  // Toggle Theme & re-render banner for current theme
+  const toggleTheme = () => {
+    const next = !isDarkMode;
+    setIsDarkMode(next);
+    localStorage.setItem('easyflight_theme', next ? 'dark' : 'light');
+
+    if (activePost) {
+      const newBanner = generateOfficeBannerSvg(
+        activePost.airlineName, 
+        activePost.officeName, 
+        activePost.city, 
+        activePost.tfnNumber, 
+        next ? 'dark' : 'light'
+      );
+      const updatedSections = activePost.sections || {
+        urgentCalloutTitle: '24/7 Priority Travel Assistance & Booking Desk',
+        urgentCalloutDesc: 'Need immediate booking assistance?',
+        overviewPara1: '',
+        overviewPara2: '',
+        officeHours: '24/7',
+        officeAddress: activePost.officeName,
+        servicesList: [],
+        faqs: []
+      };
+      const updatedHtml = buildHtmlFromSections(
+        activePost.title,
+        newBanner,
+        activePost.tfnNumber,
+        activePost.airlineName,
+        activePost.officeName,
+        activePost.city,
+        activePost.country,
+        updatedSections,
+        activePost.socialLinks
+      );
+      const updated = { ...activePost, imageUrl: newBanner, htmlContent: updatedHtml };
+      const newPosts = [...generatedPosts];
+      newPosts[currentPostIndex] = updated;
+      setGeneratedPosts(newPosts);
+    }
+  };
+
+
+
+  const handleFullLogout = () => {
+    setIsAuthenticated(false);
+    setIsSessionLocked(false);
+  };
+
+  const toggleAirlineSelection = (id: string) => {
+    setAirlines(airlines.map((a: AirlineItem) => a.id === id ? { ...a, selected: !a.selected } : a));
+  };
+
+  const handleSelectAll = (select: boolean) => {
+    setAirlines(airlines.map((a: AirlineItem) => ({ ...a, selected: select })));
+  };
+
+  const selectedAirlines = airlines.filter((a: AirlineItem) => a.selected);
+
+  // Bulk Post Generator
+  const handleGenerateBulkPosts = () => {
+    setIsGeneratingBulk(true);
+    const newQueue: GeneratedPost[] = [];
+    const currentTheme = isDarkMode ? 'dark' : 'light';
+
+    selectedAirlines.forEach((airline: AirlineItem) => {
+      const officesToProcess: AirlineOffice[] = airline.offices.length > 0 
+        ? airline.offices 
+        : [{ id: `${airline.id}-hq`, name: `${airline.name} Headquarters`, city: 'Headquarters', country: 'United States' }];
+
+      officesToProcess.forEach((office: AirlineOffice) => {
+        const post = generateOfficeBlogPost(
+          airline,
+          office,
+          targetKeyword,
+          commonTfn,
+          undefined,
+          socialLinks,
+          currentTheme
+        );
+        newQueue.push(post);
+      });
+    });
+
+    setTimeout(() => {
+      setGeneratedPosts(newQueue);
+      setCurrentPostIndex(0);
+      setIsGeneratingBulk(false);
+      setStatusMessage(`Generated ${newQueue.length} flight blogs with TFN (${commonTfn})! Review and edit using the Easy Editor.`);
+      setTimeout(() => setStatusMessage(null), 5000);
+    }, 600);
+  };
+
+  // AI-Powered Single Post Generator
+  const handleGenerateAIPost = async (index: number) => {
+    const post = generatedPosts[index];
+    if (!post) return;
+
+    const newPosts = [...generatedPosts];
+    newPosts[index] = { ...post, status: 'Draft' as any }; // Visual indicator
+    setGeneratedPosts(newPosts);
+    setStatusMessage(`Generating AI Content for ${post.airlineName} - ${post.city}...`);
+
+    try {
+      // 1. Get history from Supabase to ensure variety
+      const history = await getRecentPosts(post.airlineName, post.city);
+      
+      // 2. Generate content with DeepSeek
+      const aiContent: BlogPostContent = await generateDeepSeekContent(
+        post.airlineName,
+        post.city,
+        post.country,
+        post.keyword || targetKeyword,
+        post.tfnNumber,
+        history
+      );
+
+      // 3. Generate Free AI Image with Pollinations
+      const aiImageUrl = generateFreeAiImageUrl(`${post.airlineName} airline office in ${post.city} travel photography`);
+
+      // 4. Update the post sections
+      const updatedSections: PostSections = {
+        ...(post.sections || {
+          urgentCalloutTitle: '24/7 Priority Travel Assistance & Dispute Helpline',
+          urgentCalloutDesc: `Need immediate assistance with your ${post.airlineName} dispute at ${post.city}?`,
+          overviewPara1: '',
+          overviewPara2: '',
+          officeHours: '24/7',
+          officeAddress: post.officeName,
+          servicesList: [],
+          faqs: []
+        }),
+        overviewPara1: aiContent.overview.split('\n\n')[0] || aiContent.overview,
+        overviewPara2: aiContent.overview.split('\n\n')[1] || '',
+        servicesList: aiContent.services,
+        faqs: aiContent.faqs
+      };
+
+      const updatedHtml = buildHtmlFromSections(
+        aiContent.title,
+        aiImageUrl,
+        post.tfnNumber,
+        post.airlineName,
+        post.officeName,
+        post.city,
+        post.country,
+        updatedSections,
+        post.socialLinks || socialLinks,
+        post.bloggerSettings
+      );
+
+      const finalPost: GeneratedPost = {
+        ...post,
+        title: aiContent.title,
+        imageUrl: aiImageUrl,
+        sections: updatedSections,
+        htmlContent: updatedHtml,
+        status: 'Ready',
+        verified: true
+      };
+
+      const finalPosts = [...generatedPosts];
+      finalPosts[index] = finalPost;
+      setGeneratedPosts(finalPosts);
+      setStatusMessage(`AI Generation Complete for ${post.airlineName}!`);
+    } catch (error) {
+      console.error('AI Generation failed:', error);
+      setStatusMessage('AI Generation failed. Check console for details.');
+      const fallbackPosts = [...generatedPosts];
+      fallbackPosts[index] = { ...post, status: 'Error' };
+      setGeneratedPosts(fallbackPosts);
+    } finally {
+      setTimeout(() => setStatusMessage(null), 3000);
+    }
+  };
+
+  const handleGenerateBulkAI = async () => {
+    setIsGeneratingBulk(true);
+    setStatusMessage(`Starting AI Content Generation for ${selectedAirlines.length} airlines...`);
+    
+    // First generate the base skeleton
+    handleGenerateBulkPosts();
+    
+    // Then sequentially update with AI content (to avoid rate limits or heavy concurrent load)
+    // We'll do them in a loop
+  };
+
+  // Effect to handle bulk AI generation after base queue is ready
+  useEffect(() => {
+    if (isGeneratingBulk && generatedPosts.length > 0 && generatedPosts.every(p => p.status === 'Ready' && !p.verified)) {
+       const processQueue = async () => {
+         for (let i = 0; i < generatedPosts.length; i++) {
+           setBulkProgress({ current: i + 1, total: generatedPosts.length, currentTitle: `AI: ${generatedPosts[i].airlineName}` });
+           await handleGenerateAIPost(i);
+         }
+         setIsGeneratingBulk(false);
+         setBulkProgress(null);
+         setStatusMessage('Bulk AI Generation Complete!');
+       };
+       processQueue();
+    }
+  }, [isGeneratingBulk, generatedPosts.length]);
+
+  // Easy Non-Technical Section Update
+  const handleUpdateSection = (field: keyof PostSections, value: any) => {
+    if (!activePost || !activePost.sections) return;
+    const updatedSections: PostSections = {
+      ...activePost.sections,
+      [field]: value
+    };
+
+    const updatedHtml = buildHtmlFromSections(
+      activePost.title,
+      activePost.imageUrl,
+      activePost.tfnNumber,
+      activePost.airlineName,
+      activePost.officeName,
+      activePost.city,
+      activePost.country,
+      updatedSections,
+      activePost.socialLinks
+    );
+
+    const updatedPost: GeneratedPost = {
+      ...activePost,
+      sections: updatedSections,
+      htmlContent: updatedHtml
+    };
+
+    const newPosts = [...generatedPosts];
+    newPosts[currentPostIndex] = updatedPost;
+    setGeneratedPosts(newPosts);
+  };
+
+  const handleUpdateFaq = (index: number, question: string, answer: string) => {
+    if (!activePost || !activePost.sections) return;
+    const newFaqs = [...activePost.sections.faqs];
+    newFaqs[index] = { question, answer };
+    handleUpdateSection('faqs', newFaqs);
+  };
+
+  const handleAddFaq = () => {
+    if (!activePost || !activePost.sections) return;
+    const newFaqs = [
+      ...activePost.sections.faqs,
+      { question: `New Question about ${activePost.airlineName}?`, answer: `Contact our customer service desk at ${activePost.tfnNumber} for direct help.` }
+    ];
+    handleUpdateSection('faqs', newFaqs);
+  };
+
+  const handleDeleteFaq = (index: number) => {
+    if (!activePost || !activePost.sections) return;
+    const newFaqs = activePost.sections.faqs.filter((_: any, i: number) => i !== index);
+    handleUpdateSection('faqs', newFaqs);
+  };
+
+  // Regenerate SVG Banner
+  const handleRegenerateBanner = () => {
+    if (!activePost) return;
+    const newBanner = generateOfficeBannerSvg(
+      activePost.airlineName, 
+      activePost.officeName, 
+      activePost.city, 
+      activePost.tfnNumber,
+      isDarkMode ? 'dark' : 'light'
+    );
+    const updatedSections = activePost.sections || {
+      urgentCalloutTitle: '24/7 Priority Travel Assistance & Booking Desk',
+      urgentCalloutDesc: 'Need immediate booking assistance?',
+      overviewPara1: '',
+      overviewPara2: '',
+      officeHours: '24/7',
+      officeAddress: activePost.officeName,
+      servicesList: [],
+      faqs: []
+    };
+
+    const updatedHtml = buildHtmlFromSections(
+      activePost.title,
+      newBanner,
+      activePost.tfnNumber,
+      activePost.airlineName,
+      activePost.officeName,
+      activePost.city,
+      activePost.country,
+      updatedSections,
+      activePost.socialLinks
+    );
+
+    const updatedPost = { ...activePost, imageUrl: newBanner, htmlContent: updatedHtml };
+    const newPosts = [...generatedPosts];
+    newPosts[currentPostIndex] = updatedPost;
+    setGeneratedPosts(newPosts);
+  };
+
+  // Upload custom banner
+  const handleCustomImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0 || !activePost) return;
+    const file = e.target.files[0];
+    const localUrl = URL.createObjectURL(file);
+    const updatedHtml = activePost.htmlContent.replace(/<img[^>]*src="[^"]*"[^>]*>/, `<img src="${localUrl}" alt="${activePost.title}" style="max-width:100%;height:auto;border-radius:10px;margin:16px 0;box-shadow:0 6px 18px rgba(0,0,0,0.12);" />`);
+    
+    const updatedPost = { ...activePost, imageUrl: localUrl, htmlContent: updatedHtml };
+    const newPosts = [...generatedPosts];
+    newPosts[currentPostIndex] = updatedPost;
+    setGeneratedPosts(newPosts);
+  };
+
+  // Add custom link in modal
+  const handleAddCustomLink = () => {
+    if (!customLinkUrl.trim()) return;
+    const newLink: CustomLinkItem = {
+      id: `custom-${Date.now()}`,
+      label: customLinkLabel.trim() || 'Portal Link',
+      url: customLinkUrl.trim()
+    };
+    const updatedCustom = [...(socialLinks.customLinks || []), newLink];
+    setSocialLinks({ ...socialLinks, customLinks: updatedCustom });
+    setCustomLinkLabel('');
+    setCustomLinkUrl('');
+  };
+
+  const handleDeleteCustomLink = (id: string) => {
+    const updatedCustom = (socialLinks.customLinks || []).filter((c: CustomLinkItem) => c.id !== id);
+    setSocialLinks({ ...socialLinks, customLinks: updatedCustom });
+  };
+
+  // Save Links & re-render active post
+  const handleSaveLinksAndApply = () => {
+    setShowSocialModal(false);
+    if (activePost && activePost.sections) {
+      const updatedHtml = buildHtmlFromSections(
+        activePost.title,
+        activePost.imageUrl,
+        activePost.tfnNumber,
+        activePost.airlineName,
+        activePost.officeName,
+        activePost.city,
+        activePost.country,
+        activePost.sections,
+        socialLinks
+      );
+      const updated = { ...activePost, socialLinks, htmlContent: updatedHtml };
+      const newPosts = [...generatedPosts];
+      newPosts[currentPostIndex] = updated;
+      setGeneratedPosts(newPosts);
+    }
+    setStatusMessage('Website, portals, and social links saved & embedded!');
+    setTimeout(() => setStatusMessage(null), 3000);
+  };
+
+  const handleToggleVerifyPost = (index: number) => {
+    const post = generatedPosts[index];
+    if (!post) return;
+    const updated = { ...post, verified: !post.verified };
+    const newPosts = [...generatedPosts];
+    newPosts[index] = updated;
+    setGeneratedPosts(newPosts);
+  };
+
+  const handleVerifyAll = (verify: boolean) => {
+    const newPosts = generatedPosts.map((p: GeneratedPost) => ({ ...p, verified: verify }));
+    setGeneratedPosts(newPosts);
+    setStatusMessage(verify ? `All ${newPosts.length} posts marked as verified!` : 'Unverified all posts.');
+    setTimeout(() => setStatusMessage(null), 3000);
+  };
+
+  const handleUpdateBloggerSettings = (updatedSettings: BloggerSubSettings) => {
+    if (!activePost || !activePost.sections) return;
+    const updatedHtml = buildHtmlFromSections(
+      activePost.title,
+      activePost.imageUrl,
+      activePost.tfnNumber,
+      activePost.airlineName,
+      activePost.officeName,
+      activePost.city,
+      activePost.country,
+      activePost.sections,
+      activePost.socialLinks,
+      updatedSettings
+    );
+    const updated: GeneratedPost = {
+      ...activePost,
+      bloggerSettings: updatedSettings,
+      labels: updatedSettings.labels,
+      slug: updatedSettings.permalinkSlug,
+      htmlContent: updatedHtml
+    };
+    const newPosts = [...generatedPosts];
+    newPosts[currentPostIndex] = updated;
+    setGeneratedPosts(newPosts);
+  };
+
+
+
+  // Publish Single Post to Blogger
+  const handlePublishSinglePost = async (index: number) => {
+    const targetPost = generatedPosts[index];
+    if (!targetPost) return;
+
+    if (!publishSecret && !googleAuthConfig.refresh_token) {
+      setShowConfigModal(true);
+      setStatusMessage('Please configure your credentials in the Backend Config modal.');
+      return;
+    }
+
+    setIsPublishing(true);
+    setStatusMessage(`Publishing "${targetPost.title}" to Blogger...`);
+    setAuthorInviteNotice(null);
+
+    try {
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${publishSecret}`
+      };
+
+      const res = await fetch('/api/blogger/publish', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          blogId: blogId,
+          title: targetPost.title,
+          content: targetPost.htmlContent,
+          labels: targetPost.bloggerSettings?.labels || targetPost.labels,
+          customMetaData: targetPost.bloggerSettings?.searchDescription,
+          location: targetPost.bloggerSettings?.location,
+          readerComments: targetPost.bloggerSettings?.readerComments,
+          isDraft: false,
+          googleAuthConfig: googleAuthConfig
+        })
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        const liveUrl = data.url || TARGET_BLOG_URL;
+        const updated = { ...targetPost, status: 'Published' as const, publishedUrl: liveUrl };
+        const newPosts = [...generatedPosts];
+        newPosts[index] = updated;
+        setGeneratedPosts(newPosts);
+        setStatusMessage(`Successfully published live to Blogger! Post Link: ${liveUrl}`);
+        
+        // Save to Supabase on success
+        savePostToSupabase({
+          title: targetPost.title,
+          content: targetPost.htmlContent,
+          airline_name: targetPost.airlineName,
+          city: targetPost.city
+        });
+      } else {
+        setStatusMessage(`Publish status: ${data.error || 'Check Blogger Author Permissions'}`);
+      }
+    } catch (e: any) {
+      setStatusMessage(`Error: ${e.message}`);
+    } finally {
+      setIsPublishing(false);
+    }
+  };
+
+  const handlePublishToBlogger = async () => {
+    await handlePublishSinglePost(currentPostIndex);
+  };
+
+  // Bulk Publish All Verified Posts
+  const handlePublishAllVerified = async () => {
+    const verifiedIndices = generatedPosts
+      .map((p: GeneratedPost, idx: number) => ({ p, idx }))
+      .filter(({ p }: { p: GeneratedPost; idx: number }) => p.verified && p.status !== 'Published');
+
+    if (verifiedIndices.length === 0) {
+      setStatusMessage('No un-published verified posts in queue. Click "Verify All" or mark posts as verified first.');
+      setTimeout(() => setStatusMessage(null), 4000);
+      return;
+    }
+
+    if (!publishSecret && !googleAuthConfig.refresh_token) {
+      setShowConfigModal(true);
+      setStatusMessage('Please configure your credentials to enable bulk publishing.');
+      return;
+    }
+
+    setIsPublishing(true);
+    setAuthorInviteNotice(null);
+
+    const headers: Record<string, string> = { 
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${publishSecret}`
+    };
+    const updatedQueue = [...generatedPosts];
+
+    for (let i = 0; i < verifiedIndices.length; i++) {
+      const { p: postToPublish, idx } = verifiedIndices[i];
+      setBulkProgress({
+        current: i + 1,
+        total: verifiedIndices.length,
+        currentTitle: `${postToPublish.airlineName} - ${postToPublish.city}`
+      });
+
+      try {
+        const res = await fetch('/api/blogger/publish', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            blogId: blogId,
+            title: postToPublish.title,
+            content: postToPublish.htmlContent,
+            labels: postToPublish.bloggerSettings?.labels || postToPublish.labels,
+            customMetaData: postToPublish.bloggerSettings?.searchDescription,
+            location: postToPublish.bloggerSettings?.location,
+            readerComments: postToPublish.bloggerSettings?.readerComments,
+            isDraft: false,
+            googleAuthConfig: googleAuthConfig
+          })
+        });
+
+        const data = await res.json();
+        if (res.ok && data.success) {
+          updatedQueue[idx] = {
+            ...postToPublish,
+            status: 'Published',
+            publishedUrl: data.url || TARGET_BLOG_URL
+          };
+          setGeneratedPosts([...updatedQueue]);
+
+          // Save to Supabase on success
+          savePostToSupabase({
+            title: postToPublish.title,
+            content: postToPublish.htmlContent,
+            airline_name: postToPublish.airlineName,
+            city: postToPublish.city
+          });
+        } else {
+          updatedQueue[idx] = {
+            ...postToPublish,
+            status: 'Error'
+          };
+          setGeneratedPosts([...updatedQueue]);
+        }
+      } catch (err) {
+        updatedQueue[idx] = { ...postToPublish, status: 'Error' };
+        setGeneratedPosts([...updatedQueue]);
+      }
+    }
+
+    setIsPublishing(false);
+    setBulkProgress(null);
+    setStatusMessage(`Bulk publishing finished for ${verifiedIndices.length} posts!`);
+    setTimeout(() => setStatusMessage(null), 5000);
+  };
+
+  const copyToClipboard = (text: string, key: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedKey(key);
+    setTimeout(() => setCopiedKey(null), 2500);
+  };
+
+  // Filter airlines by search query
+  const filteredAirlines = airlines.filter((a: AirlineItem) => 
+    a.name.toLowerCase().includes(airlineFilter.toLowerCase()) ||
+    a.offices.some((o: AirlineOffice) => o.name.toLowerCase().includes(airlineFilter.toLowerCase()))
+  );
+
+  // If user is not authenticated on this tab load/refresh, show the secure LoginPage
+  if (!isAuthenticated) {
+    return (
+      <LoginPage 
+        onLoginSuccess={() => {
+          setIsAuthenticated(true);
+          lastActivityRef.current = Date.now();
+        }}
+        isDarkMode={isDarkMode}
+      />
+    );
+  }
+
+  return (
+    <div className={`min-h-screen transition-colors duration-200 font-sans flex flex-col ${
+      isDarkMode ? 'bg-slate-950 text-slate-100' : 'bg-slate-100 text-slate-900'
+    }`}>
+      
+      {/* Top Navbar */}
+      <header className={`border-b sticky top-0 z-40 px-6 py-2.5 flex items-center justify-between transition-colors ${
+        isDarkMode ? 'bg-slate-900/95 border-slate-800' : 'bg-white/95 border-slate-200 shadow-sm'
+      }`}>
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-sky-500 to-blue-600 flex items-center justify-center text-white shadow font-bold">
+            <Plane className="w-4 h-4 text-white" />
+          </div>
+          <div className="flex items-center gap-2">
+            <h1 className="text-sm font-bold tracking-tight">AutoBlog Engine</h1>
+            <span className={`text-[11px] border-l pl-2 ${isDarkMode ? 'text-slate-400 border-slate-700' : 'text-slate-500 border-slate-300'}`}>
+              Production Flight SEO Studio
+            </span>
+          </div>
+        </div>
+
+        {/* Right Header: Service Account Badge, Theme Switcher, Website/Social Links, Account, Lock */}
+        <div className="flex items-center gap-3">
+          
+          {/* Connection Status Badge */}
+          <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold transition ${
+            isBackendConnected
+              ? isDarkMode
+                ? 'bg-emerald-950/40 border-emerald-800 text-emerald-400'
+                : 'bg-emerald-50 border-emerald-300 text-emerald-700'
+              : isDarkMode
+                ? 'bg-amber-950/40 border-amber-800 text-amber-400'
+                : 'bg-amber-50 border-amber-300 text-amber-700'
+          }`}>
+            <Globe className="w-3.5 h-3.5" />
+            <span>{isBackendConnected ? 'Google API Connected' : 'Google Auth Needed'}</span>
+            <span className={`w-2 h-2 rounded-full ${isBackendConnected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
+          </div>
+
+          {/* Backend Config Button */}
+          <button
+            onClick={() => setShowConfigModal(true)}
+            className={`p-2 rounded-lg border text-xs flex items-center gap-1.5 transition ${
+              (publishSecret || googleAuthConfig.refresh_token)
+                ? (isDarkMode ? 'bg-emerald-950/20 border-emerald-800 text-emerald-400' : 'bg-emerald-50 border-emerald-200 text-emerald-600')
+                : (isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-white border-slate-300 text-slate-700')
+            }`}
+            title="Configure Publish Secret and Google OAuth for testing"
+          >
+            <Settings className="w-3.5 h-3.5" />
+            <span className="font-semibold">Backend Config</span>
+          </button>
+
+          {/* Light / Dark Mode Toggle Button */}
+          <button
+            onClick={toggleTheme}
+            className={`p-2 rounded-lg border text-xs flex items-center gap-1.5 transition ${
+              isDarkMode 
+                ? 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-amber-400' 
+                : 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-700'
+            }`}
+            title={isDarkMode ? 'Switch to Eye-Friendly Light Theme' : 'Switch to Dark Theme'}
+          >
+            {isDarkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+            <span className="font-semibold">{isDarkMode ? 'Dark' : 'Light'}</span>
+          </button>
+
+          {/* Website & Social Links Button */}
+          <button
+            onClick={() => setShowSocialModal(true)}
+            className={`px-3 py-1.5 rounded-lg border text-xs font-semibold flex items-center gap-1.5 transition ${
+              isDarkMode 
+                ? 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-sky-400' 
+                : 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-sky-700'
+            }`}
+          >
+            <Globe className="w-3.5 h-3.5" />
+            Website &amp; Social Links
+          </button>
+
+
+
+          {/* Lock Screen Button */}
+          <button
+            onClick={() => setIsSessionLocked(true)}
+            className={`p-2 rounded-lg border text-xs transition ${
+              isDarkMode ? 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-300' : 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-700'
+            }`}
+            title="Lock Studio Screen"
+          >
+            <Lock className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      </header>
+
+  {/* Author Invite Alert Notice if needed */}
+      {authorInviteNotice && (
+        <div className="bg-amber-500/10 border-b border-amber-500/30 px-6 py-2.5 flex items-center justify-between text-xs text-amber-800 dark:text-amber-200">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-amber-500 flex-shrink-0" />
+            <span><strong>Blogger Permission Setup:</strong> {authorInviteNotice}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Main Workspace */}
+      <main className="flex-1 max-w-7xl w-full mx-auto p-5 grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+        {/* LEFT COLUMN: Controls, TFN, Keyword, Airline Selector */}
+        <div className="lg:col-span-5 space-y-4">
+          
+          <div className={`border rounded-2xl p-5 shadow-sm space-y-4 transition-colors ${
+            isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
+          }`}>
+            
+            {/* Common TFN Number Input */}
+            <div>
+              <div className="flex items-center justify-between text-xs mb-1">
+                <label className="font-bold">
+                  Common Toll-Free Number (TFN)
+                </label>
+                <button
+                  onClick={() => setCommonTfn('+1 (888) 794-3464')}
+                  className="text-sky-600 dark:text-sky-400 hover:underline text-[11px]"
+                >
+                  Reset Default (+1 888 794 3464)
+                </button>
+              </div>
+              <input
+                type="text"
+                value={commonTfn}
+                onChange={(e) => setCommonTfn(e.target.value)}
+                placeholder="+1 (888) 794-3464"
+                className={`w-full text-sm font-bold rounded-lg p-2.5 border outline-none ${
+                  isDarkMode 
+                    ? 'bg-slate-950 border-slate-800 text-emerald-400 focus:border-emerald-500' 
+                    : 'bg-slate-50 border-slate-300 text-emerald-700 focus:border-emerald-500'
+                }`}
+              />
+              <span className="text-[11px] text-slate-500 mt-1 block">
+                Embedded across all blog headlines, callout buttons, and contact tables.
+              </span>
+            </div>
+
+            {/* Keyword / Topic Input with Web Grounding */}
+            <div>
+              <div className="flex items-center justify-between text-xs mb-1">
+                <label className="font-bold">Target Keyword / Topic</label>
+                <label className="flex items-center gap-1 cursor-pointer text-[11px] text-sky-600 dark:text-sky-400 font-semibold">
+                  <input
+                    type="checkbox"
+                    checked={isWebGroundingEnabled}
+                    onChange={(e) => setIsWebGroundingEnabled(e.target.checked)}
+                    className="w-3 h-3 rounded"
+                  />
+                  <span>Web Grounding &amp; Fast Indexing</span>
+                </label>
+              </div>
+              <input
+                type="text"
+                value={targetKeyword}
+                onChange={(e) => setTargetKeyword(e.target.value)}
+                placeholder="Office Location, Contact Number & Flight Reservations"
+                className={`w-full text-xs rounded-lg p-2.5 border outline-none ${
+                  isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-300 text-slate-800'
+                }`}
+              />
+              <span className="text-[11px] text-slate-500 mt-1 block">
+                Automatically adapts to each selected airline and airport city.
+              </span>
+            </div>
+
+            {/* Target Blogger ID Input */}
+            <div>
+              <label className="block text-xs font-bold mb-1">Target Blogger Blog ID</label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={blogId}
+                  onChange={(e) => setBlogId(e.target.value)}
+                  placeholder="Enter Blogger Blog ID"
+                  className={`w-full text-xs font-mono rounded-lg p-2 border outline-none ${
+                    isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-300 text-slate-800'
+                  }`}
+                />
+                <a
+                  href={`https://www.blogger.com/blog/posts/${blogId}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-3 py-2 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold flex items-center gap-1 flex-shrink-0"
+                >
+                  Blogger <ExternalLink className="w-3 h-3" />
+                </a>
+              </div>
+            </div>
+
+            {/* Airline Selector Header */}
+            <div className={`pt-3 border-t space-y-3 ${isDarkMode ? 'border-slate-800' : 'border-slate-200'}`}>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold">Select Airlines</span>
+                  <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-500/20">
+                    {selectedAirlines.length} / {airlines.length} selected
+                  </span>
+                </div>
+                <button
+                  onClick={() => handleSelectAll(selectedAirlines.length !== airlines.length)}
+                  className={`text-[11px] font-semibold px-2 py-1 rounded border transition ${
+                    isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-slate-100 border-slate-300 text-slate-700'
+                  }`}
+                >
+                  {selectedAirlines.length === airlines.length ? 'Deselect All' : 'Select All'}
+                </button>
+              </div>
+
+              {/* Search Bar */}
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
+                <input
+                  type="text"
+                  placeholder="Quick filter airlines..."
+                  value={airlineFilter}
+                  onChange={(e) => setAirlineFilter(e.target.value)}
+                  className={`w-full text-xs rounded-lg pl-8 pr-3 py-2 border outline-none ${
+                    isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-300 text-slate-800'
+                  }`}
+                />
+              </div>
+
+              {/* Airline Grid */}
+              <div className={`grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-56 overflow-y-auto p-1.5 rounded-xl border ${
+                isDarkMode ? 'bg-slate-950/70 border-slate-800' : 'bg-slate-50 border-slate-200'
+              }`}>
+                {filteredAirlines.map((airline: AirlineItem) => (
+                  <label
+                    key={airline.id}
+                    className={`flex items-center gap-2 p-2 rounded-lg border text-xs cursor-pointer transition select-none ${
+                      airline.selected
+                        ? (isDarkMode ? 'bg-sky-950/40 border-sky-500/50 text-white' : 'bg-sky-50 border-sky-300 text-sky-900')
+                        : (isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-400' : 'bg-white border-slate-200 text-slate-600')
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={!!airline.selected}
+                      onChange={() => toggleAirlineSelection(airline.id)}
+                      className="rounded border-slate-400 text-sky-600 focus:ring-0 w-3.5 h-3.5"
+                    />
+                    <div className="truncate flex-1">
+                      <span className="font-medium truncate block">{airline.name}</span>
+                      <span className="text-[10px] text-slate-500">{airline.offices.length} offices</span>
+                    </div>
+                  </label>
+                ))}
+              </div>
+
+              {/* Action Buttons */}
+              <div className="pt-2 flex items-center gap-2">
+                <button
+                  onClick={() => setIsManageModalOpen(true)}
+                  className={`px-3.5 py-2.5 rounded-xl text-xs font-semibold border transition flex items-center gap-1.5 flex-1 justify-center ${
+                    isDarkMode ? 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700' : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-300'
+                  }`}
+                >
+                  <Settings className="w-3.5 h-3.5" />
+                  Manage Airlines ({airlines.length})
+                </button>
+
+                <button
+                  onClick={handleGenerateBulkPosts}
+                  disabled={isGeneratingBulk || selectedAirlines.length === 0}
+                  className={`px-4 py-2.5 rounded-xl border font-bold text-xs transition flex items-center gap-2 flex-1 justify-center ${
+                    isDarkMode ? 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700' : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-300'
+                  }`}
+                >
+                  <RefreshCw className={`w-4 h-4 ${isGeneratingBulk && !bulkProgress ? 'animate-spin' : ''}`} />
+                  {isGeneratingBulk && !bulkProgress ? 'Synthesizing...' : 'Draft Bulk'}
+                </button>
+
+                <button
+                  onClick={handleGenerateBulkAI}
+                  disabled={isGeneratingBulk || selectedAirlines.length === 0}
+                  className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-bold transition flex items-center gap-2 flex-1 justify-center shadow"
+                >
+                  <Sparkles className={`w-4 h-4 ${isGeneratingBulk && bulkProgress ? 'animate-spin' : ''}`} />
+                  {isGeneratingBulk && bulkProgress ? 'AI Generating...' : 'Bulk AI Magic'}
+                </button>
+              </div>
+
+            </div>
+          </div>
+        </div>
+
+        {/* RIGHT COLUMN: Live Review Studio & Non-Technical Easy Editor */}
+        <div className={`lg:col-span-7 border rounded-2xl p-5 shadow-sm flex flex-col justify-between space-y-4 transition-colors ${
+          isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
+        }`}>
+          <div>
+            
+            {/* Top Queue Bar & View Selector */}
+            <div className={`flex flex-wrap items-center justify-between pb-3 border-b gap-2 ${
+              isDarkMode ? 'border-slate-800' : 'border-slate-200'
+            }`}>
+              
+              {/* Queue Mode vs Simulator Mode Toggle */}
+              <div className="flex items-center gap-2">
+                <div className={`flex items-center p-0.5 rounded-lg border text-xs ${
+                  isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-100 border-slate-300'
+                }`}>
+                  <button
+                    onClick={() => setViewMode('simulator')}
+                    className={`px-2.5 py-1 rounded font-medium flex items-center gap-1.5 transition ${
+                      viewMode === 'simulator' 
+                        ? 'bg-sky-600 text-white font-bold shadow-sm' 
+                        : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    <Eye className="w-3.5 h-3.5" />
+                    Live Simulator ({currentPostIndex + 1}/{generatedPosts.length || 1})
+                  </button>
+                  <button
+                    onClick={() => setViewMode('queue')}
+                    className={`px-2.5 py-1 rounded font-medium flex items-center gap-1.5 transition ${
+                      viewMode === 'queue' 
+                        ? 'bg-sky-600 text-white font-bold shadow-sm' 
+                        : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    <ListFilter className="w-3.5 h-3.5" />
+                    Review All ({generatedPosts.length}) Posts
+                  </button>
+                </div>
+
+                {viewMode === 'simulator' && activePost && (
+                  <span className="text-xs font-semibold truncate max-w-[150px] hidden sm:inline">
+                    {activePost.airlineName} • {activePost.city}
+                  </span>
+                )}
+              </div>
+
+              {/* Stepper & View Mode Tabs (When in simulator mode) */}
+              {viewMode === 'simulator' && (
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={() => setCurrentPostIndex(Math.max(0, currentPostIndex - 1))}
+                    disabled={currentPostIndex === 0}
+                    className={`p-1 rounded border disabled:opacity-40 transition ${
+                      isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-300'
+                    }`}
+                    title="Previous Post"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+                  <span className="text-xs font-mono px-1">
+                    {currentPostIndex + 1} / {generatedPosts.length || 1}
+                  </span>
+                  <button
+                    onClick={() => setCurrentPostIndex(Math.min(generatedPosts.length - 1, currentPostIndex + 1))}
+                    disabled={currentPostIndex >= generatedPosts.length - 1}
+                    className={`p-1 rounded border disabled:opacity-40 transition ${
+                      isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-300'
+                    }`}
+                    title="Next Post"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+
+                  <div className={`flex items-center p-0.5 rounded-lg border text-xs ml-1 ${
+                    isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-100 border-slate-300'
+                  }`}>
+                    <button
+                      onClick={() => setReviewTab('visual')}
+                      className={`px-2 py-1 rounded font-medium transition ${
+                        reviewTab === 'visual' ? 'bg-sky-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
+                      }`}
+                    >
+                      Visual Preview
+                    </button>
+                    <button
+                      onClick={() => setReviewTab('form')}
+                      className={`px-2 py-1 rounded font-medium transition ${
+                        reviewTab === 'form' ? 'bg-sky-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
+                      }`}
+                    >
+                      Easy Editor
+                    </button>
+                    <button
+                      onClick={() => setReviewTab('settings')}
+                      className={`px-2 py-1 rounded font-medium flex items-center gap-1 transition ${
+                        reviewTab === 'settings' ? 'bg-sky-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
+                      }`}
+                      title="Labels, Permalink, Geolocation & Search Description"
+                    >
+                      <Sliders className="w-3 h-3" />
+                      Blogger Sub-Settings
+                    </button>
+                    <button
+                      onClick={() => setReviewTab('raw')}
+                      className={`px-2 py-1 rounded font-medium transition ${
+                        reviewTab === 'raw' ? 'bg-sky-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
+                      }`}
+                    >
+                      Raw HTML
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Notification Banner */}
+            {statusMessage && (
+              <div className="mt-3 p-3 rounded-lg bg-sky-500/10 border border-sky-500/30 text-xs text-sky-800 dark:text-sky-300 flex items-center justify-between">
+                <span>{statusMessage}</span>
+                <button onClick={() => setStatusMessage(null)} className="text-slate-400 hover:text-slate-700 text-xs">✕</button>
+              </div>
+            )}
+
+            {viewMode === 'queue' ? (
+              <div className="mt-3">
+                <ReviewQueueManager
+                  posts={generatedPosts}
+                  currentIndex={currentPostIndex}
+                  onSelectPost={(idx) => {
+                    setCurrentPostIndex(idx);
+                    setViewMode('simulator');
+                  }}
+                  onToggleVerifyPost={handleToggleVerifyPost}
+                  onVerifyAll={handleVerifyAll}
+                  onPublishSinglePost={handlePublishSinglePost}
+                  onPublishAllVerified={handlePublishAllVerified}
+                  onDownloadBanner={(url, title) => downloadBannerImage(url, title)}
+                  isPublishingBulk={isPublishing && !!bulkProgress}
+                  bulkProgress={bulkProgress}
+                  isDarkMode={isDarkMode}
+                  onCloseQueueView={() => setViewMode('simulator')}
+                />
+              </div>
+            ) : (
+              <>
+                {/* Banner Quick Actions */}
+                {activePost && (
+                  <div className={`mt-3 p-3 rounded-xl border flex flex-wrap items-center justify-between gap-2 text-xs ${
+                    isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'
+                  }`}>
+                    <div className="flex items-center gap-2 truncate">
+                      <span className="font-bold">Headline:</span>
+                      <span className="truncate max-w-sm font-medium">{activePost.title}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => handleGenerateAIPost(currentPostIndex)}
+                        className="bg-emerald-600 hover:bg-emerald-500 text-white px-2.5 py-1 rounded flex items-center gap-1 font-bold text-[11px] shadow-sm transition"
+                      >
+                        <Sparkles className="w-3.5 h-3.5" /> AI Rewrite
+                      </button>
+                      <button
+                        onClick={handleRegenerateBanner}
+                        className="text-sky-600 dark:text-sky-400 hover:underline flex items-center gap-1 font-semibold text-[11px]"
+                      >
+                        <RefreshCw className="w-3 h-3" /> Redraw SVG
+                      </button>
+                      <button
+                        onClick={() => activePost && downloadBannerImage(activePost.imageUrl, activePost.title)}
+                        className="text-amber-600 dark:text-amber-400 hover:underline flex items-center gap-1 font-semibold text-[11px]"
+                        title="Download current banner as high-res PNG"
+                      >
+                        <Download className="w-3 h-3" /> Download
+                      </button>
+                      <label className="cursor-pointer text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 flex items-center gap-1 font-semibold text-[11px]">
+                        <Upload className="w-3 h-3" /> Upload
+                        <input type="file" accept="image/*" onChange={handleCustomImageUpload} className="hidden" />
+                      </label>
+                    </div>
+                  </div>
+                )}
+
+                {/* Content Review Area */}
+                <div className={`mt-3 rounded-xl border p-4 max-h-[500px] overflow-y-auto leading-relaxed ${
+                  isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50/70 border-slate-200'
+                }`}>
+                  {activePost ? (
+                    reviewTab === 'visual' ? (
+                      <div dangerouslySetInnerHTML={{ __html: activePost.htmlContent }} className="prose prose-sm max-w-none" />
+                    ) : reviewTab === 'form' ? (
+                      <div className="space-y-4 text-xs">
+                        <div className="p-2.5 rounded-lg bg-sky-50 dark:bg-sky-950/30 border border-sky-200 dark:border-sky-800 text-sky-800 dark:text-sky-300">
+                          <strong>Easy Editor:</strong> Change any field below. The visual preview and live article HTML will update automatically.
+                        </div>
+
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <label className="font-bold">Article Headline</label>
+                            <button 
+                              onClick={() => copyToClipboard(activePost.title, 'title')}
+                              className="text-sky-600 dark:text-sky-400 hover:underline flex items-center gap-1 text-[10px]"
+                            >
+                              {copiedKey === 'title' ? <Check className="w-2.5 h-2.5" /> : <Copy className="w-2.5 h-2.5" />}
+                              Copy
+                            </button>
+                          </div>
+                          <input
+                            type="text"
+                            value={activePost.title}
+                            onChange={(e) => {
+                              const updated = { ...activePost, title: e.target.value };
+                              const newPosts = [...generatedPosts];
+                              newPosts[currentPostIndex] = updated;
+                              setGeneratedPosts(newPosts);
+                            }}
+                            className={`w-full p-2 border rounded-lg font-medium outline-none ${
+                              isDarkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-300 text-slate-800'
+                            }`}
+                          />
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          <div>
+                            <div className="flex items-center justify-between mb-1">
+                              <label className="font-bold">Alert Box Title</label>
+                              <button 
+                                onClick={() => copyToClipboard(activePost.sections?.urgentCalloutTitle || '', 'callout')}
+                                className="text-sky-600 dark:text-sky-400 hover:underline flex items-center gap-1 text-[10px]"
+                              >
+                                {copiedKey === 'callout' ? <Check className="w-2.5 h-2.5" /> : <Copy className="w-2.5 h-2.5" />}
+                                Copy
+                              </button>
+                            </div>
+                            <input
+                              type="text"
+                              value={activePost.sections?.urgentCalloutTitle || ''}
+                              onChange={(e) => handleUpdateSection('urgentCalloutTitle', e.target.value)}
+                              className={`w-full p-2 border rounded-lg outline-none ${
+                                isDarkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-300 text-slate-800'
+                              }`}
+                            />
+                          </div>
+                          <div>
+                            <div className="flex items-center justify-between mb-1">
+                              <label className="font-bold">Office Hours</label>
+                              <button 
+                                onClick={() => copyToClipboard(activePost.sections?.officeHours || '', 'hours')}
+                                className="text-sky-600 dark:text-sky-400 hover:underline flex items-center gap-1 text-[10px]"
+                              >
+                                {copiedKey === 'hours' ? <Check className="w-2.5 h-2.5" /> : <Copy className="w-2.5 h-2.5" />}
+                                Copy
+                              </button>
+                            </div>
+                            <input
+                              type="text"
+                              value={activePost.sections?.officeHours || ''}
+                              onChange={(e) => handleUpdateSection('officeHours', e.target.value)}
+                              className={`w-full p-2 border rounded-lg outline-none ${
+                                isDarkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-300 text-slate-800'
+                              }`}
+                            />
+                          </div>
+                        </div>
+
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <label className="font-bold">Overview Description</label>
+                            <button 
+                              onClick={() => copyToClipboard(activePost.sections?.overviewPara1 || '', 'overview')}
+                              className="text-sky-600 dark:text-sky-400 hover:underline flex items-center gap-1 text-[10px]"
+                            >
+                              {copiedKey === 'overview' ? <Check className="w-2.5 h-2.5" /> : <Copy className="w-2.5 h-2.5" />}
+                              Copy
+                            </button>
+                          </div>
+                          <textarea
+                            rows={3}
+                            value={activePost.sections?.overviewPara1 || ''}
+                            onChange={(e) => handleUpdateSection('overviewPara1', e.target.value)}
+                            className={`w-full p-2 border rounded-lg outline-none ${
+                              isDarkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-300 text-slate-800'
+                            }`}
+                          />
+                        </div>
+
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <label className="font-bold">Terminal Address</label>
+                            <button 
+                              onClick={() => copyToClipboard(activePost.sections?.officeAddress || '', 'address')}
+                              className="text-sky-600 dark:text-sky-400 hover:underline flex items-center gap-1 text-[10px]"
+                            >
+                              {copiedKey === 'address' ? <Check className="w-2.5 h-2.5" /> : <Copy className="w-2.5 h-2.5" />}
+                              Copy
+                            </button>
+                          </div>
+                          <input
+                            type="text"
+                            value={activePost.sections?.officeAddress || ''}
+                            onChange={(e) => handleUpdateSection('officeAddress', e.target.value)}
+                            className={`w-full p-2 border rounded-lg outline-none ${
+                              isDarkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-300 text-slate-800'
+                            }`}
+                          />
+                        </div>
+
+                        {/* FAQ Items */}
+                        <div className="space-y-3 pt-2 border-t border-slate-200 dark:border-slate-800">
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold">Frequently Asked Questions (FAQ)</span>
+                            <button
+                              onClick={handleAddFaq}
+                              className="text-xs text-sky-600 dark:text-sky-400 font-semibold flex items-center gap-1"
+                            >
+                              <Plus className="w-3 h-3" /> Add Question
+                            </button>
+                          </div>
+
+                          {activePost.sections?.faqs.map((faq: { question: string; answer: string }, idx: number) => (
+                            <div key={idx} className={`p-3 rounded-lg border space-y-2 ${
+                              isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-300'
+                            }`}>
+                              <div className="flex items-center justify-between">
+                                <span className="font-semibold text-slate-500">Question #{idx + 1}</span>
+                                <div className="flex items-center gap-2">
+                                  <button 
+                                    onClick={() => copyToClipboard(`Q: ${faq.question}\nA: ${faq.answer}`, `faq-${idx}`)}
+                                    className="text-sky-600 dark:text-sky-400 hover:underline flex items-center gap-1 text-[10px]"
+                                  >
+                                    {copiedKey === `faq-${idx}` ? <Check className="w-2.5 h-2.5" /> : <Copy className="w-2.5 h-2.5" />}
+                                    Copy
+                                  </button>
+                                  <button onClick={() => handleDeleteFaq(idx)} className="text-rose-500 hover:text-rose-600">
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              </div>
+                              <input
+                                type="text"
+                                value={faq.question}
+                                onChange={(e) => handleUpdateFaq(idx, e.target.value, faq.answer)}
+                                className={`w-full p-1.5 border rounded text-xs outline-none ${
+                                  isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-300 text-slate-800'
+                                }`}
+                              />
+                              <textarea
+                                rows={2}
+                                value={faq.answer}
+                                onChange={(e) => handleUpdateFaq(idx, faq.question, e.target.value)}
+                                className={`w-full p-1.5 border rounded text-xs outline-none ${
+                                  isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-300 text-slate-800'
+                                }`}
+                              />
+                            </div>
+                          ))}
+                        </div>
+
+                      </div>
+                    ) : reviewTab === 'settings' ? (
+                      <BloggerSubSettingsTab
+                        post={activePost}
+                        onUpdateBloggerSettings={handleUpdateBloggerSettings}
+                        isDarkMode={isDarkMode}
+                      />
+                    ) : (
+                      <pre className="text-xs font-mono text-emerald-600 dark:text-emerald-300 whitespace-pre-wrap">
+                        <code>{activePost.htmlContent}</code>
+                      </pre>
+                    )
+                  ) : (
+                    <div className="p-8 text-center text-slate-400 text-xs">
+                      No post selected. Click "Generate Bulk Blogs" on the left.
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+
+          </div>
+
+          {/* Action Footer */}
+          <div className={`pt-3 border-t flex flex-wrap items-center justify-between gap-3 text-xs ${
+            isDarkMode ? 'border-slate-800' : 'border-slate-200'
+          }`}>
+            <div className="flex items-center gap-2">
+              <span className="text-slate-500">
+                Target Blog: <code className="text-sky-600 dark:text-sky-400 font-mono font-bold">{blogId}</code>
+              </span>
+              {activePost?.publishedUrl && (
+                <a
+                  href={activePost.publishedUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-emerald-600 dark:text-emerald-400 underline flex items-center gap-1 font-semibold"
+                >
+                  <ExternalLink className="w-3 h-3" /> Live Post
+                </a>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => activePost && copyToClipboard(activePost.htmlContent, 'copied')}
+                className={`px-3.5 py-2 rounded-xl font-semibold border transition flex items-center gap-1.5 ${
+                  isDarkMode ? 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-200' : 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-800'
+                }`}
+              >
+                {copiedKey === 'copied' ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                Copy HTML
+              </button>
+
+              <button
+                onClick={handlePublishToBlogger}
+                disabled={isPublishing || !activePost}
+                className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold transition flex items-center gap-2 shadow"
+              >
+                {isPublishing ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                Publish to Blogger (Auto)
+              </button>
+            </div>
+          </div>
+
+        </div>
+
+      </main>
+
+      {/* Website, Portals, Social & Custom Links Modal */}
+      {showSocialModal && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className={`border rounded-2xl max-w-lg w-full p-5 space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto ${
+            isDarkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
+          }`}>
+            <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-800">
+              <h3 className="text-sm font-bold flex items-center gap-2">
+                <Globe className="w-4 h-4 text-sky-500" />
+                Website, Portals &amp; Social Links (Optional)
+              </h3>
+              <button onClick={() => setShowSocialModal(false)} className="text-slate-400 hover:text-slate-600 text-xs">✕</button>
+            </div>
+
+            <p className="text-xs text-slate-500">
+              Add your official website, customer support portals, chat links, social profiles, or any custom URLs. When filled, branded badges automatically embed in your blog articles.
+            </p>
+
+            {/* Official Website & Support Portals */}
+            <div className="space-y-3 pt-1">
+              <div className="text-xs font-bold text-sky-600 dark:text-sky-400 uppercase tracking-wider">
+                Official Websites &amp; Contact Portals
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-500 mb-1 flex items-center gap-1.5">
+                  <Globe className="w-3 h-3 text-slate-400" /> Official Website URL
+                </label>
+                <input
+                  type="text"
+                  placeholder="https://easyflightconnect.com"
+                  value={socialLinks.website || ''}
+                  onChange={(e) => setSocialLinks({ ...socialLinks, website: e.target.value })}
+                  className={`w-full p-2 border rounded-lg text-xs outline-none ${
+                    isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-300'
+                  }`}
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-500 mb-1 flex items-center gap-1.5">
+                  <LifeBuoy className="w-3 h-3 text-slate-400" /> Support / Help Center URL
+                </label>
+                <input
+                  type="text"
+                  placeholder="https://easyflightconnect.com/support"
+                  value={socialLinks.supportUrl || ''}
+                  onChange={(e) => setSocialLinks({ ...socialLinks, supportUrl: e.target.value })}
+                  className={`w-full p-2 border rounded-lg text-xs outline-none ${
+                    isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-300'
+                  }`}
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-500 mb-1 flex items-center gap-1.5">
+                  <MessageCircle className="w-3 h-3 text-slate-400" /> WhatsApp Live Chat URL
+                </label>
+                <input
+                  type="text"
+                  placeholder="https://wa.me/18887943464"
+                  value={socialLinks.whatsapp || ''}
+                  onChange={(e) => setSocialLinks({ ...socialLinks, whatsapp: e.target.value })}
+                  className={`w-full p-2 border rounded-lg text-xs outline-none ${
+                    isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-300'
+                  }`}
+                />
+              </div>
+            </div>
+
+            {/* Social Media Profiles */}
+            <div className="space-y-3 pt-2 border-t border-slate-200 dark:border-slate-800">
+              <div className="text-xs font-bold text-sky-600 dark:text-sky-400 uppercase tracking-wider">
+                Social Media Channels
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-500 mb-1">Facebook</label>
+                  <input
+                    type="text"
+                    placeholder="https://facebook.com/..."
+                    value={socialLinks.facebook || ''}
+                    onChange={(e) => setSocialLinks({ ...socialLinks, facebook: e.target.value })}
+                    className={`w-full p-2 border rounded-lg text-xs outline-none ${
+                      isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-300'
+                    }`}
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-500 mb-1">X (Twitter)</label>
+                  <input
+                    type="text"
+                    placeholder="https://x.com/..."
+                    value={socialLinks.twitter || ''}
+                    onChange={(e) => setSocialLinks({ ...socialLinks, twitter: e.target.value })}
+                    className={`w-full p-2 border rounded-lg text-xs outline-none ${
+                      isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-300'
+                    }`}
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-500 mb-1">Instagram</label>
+                  <input
+                    type="text"
+                    placeholder="https://instagram.com/..."
+                    value={socialLinks.instagram || ''}
+                    onChange={(e) => setSocialLinks({ ...socialLinks, instagram: e.target.value })}
+                    className={`w-full p-2 border rounded-lg text-xs outline-none ${
+                      isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-300'
+                    }`}
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-500 mb-1">YouTube</label>
+                  <input
+                    type="text"
+                    placeholder="https://youtube.com/@..."
+                    value={socialLinks.youtube || ''}
+                    onChange={(e) => setSocialLinks({ ...socialLinks, youtube: e.target.value })}
+                    className={`w-full p-2 border rounded-lg text-xs outline-none ${
+                      isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-300'
+                    }`}
+                  />
+                </div>
+                <div className="col-span-2">
+                  <label className="block text-[11px] font-semibold text-slate-500 mb-1">LinkedIn</label>
+                  <input
+                    type="text"
+                    placeholder="https://linkedin.com/company/..."
+                    value={socialLinks.linkedin || ''}
+                    onChange={(e) => setSocialLinks({ ...socialLinks, linkedin: e.target.value })}
+                    className={`w-full p-2 border rounded-lg text-xs outline-none ${
+                      isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-300'
+                    }`}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Custom User-Added Links */}
+            <div className="space-y-3 pt-2 border-t border-slate-200 dark:border-slate-800">
+              <div className="text-xs font-bold text-sky-600 dark:text-sky-400 uppercase tracking-wider flex items-center justify-between">
+                <span>Custom Brand &amp; Resource Links</span>
+                <span className="text-[10px] text-slate-400 font-normal">Add unlimited custom links</span>
+              </div>
+
+              {socialLinks.customLinks && socialLinks.customLinks.length > 0 && (
+                <div className="space-y-1.5 max-h-32 overflow-y-auto">
+                  {socialLinks.customLinks.map((item: CustomLinkItem) => (
+                    <div key={item.id} className={`flex items-center justify-between px-2.5 py-1.5 rounded-lg border text-xs ${
+                      isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'
+                    }`}>
+                      <div className="truncate flex-1 pr-2">
+                        <span className="font-semibold">{item.label}: </span>
+                        <span className="text-slate-400 truncate text-[11px]">{item.url}</span>
+                      </div>
+                      <button onClick={() => handleDeleteCustomLink(item.id)} className="text-rose-500 hover:text-rose-600 p-1">
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Add Custom Link Form */}
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  placeholder="Button Label (e.g. Booking Portal)"
+                  value={customLinkLabel}
+                  onChange={(e) => setCustomLinkLabel(e.target.value)}
+                  className={`w-1/3 p-2 border rounded-lg text-xs outline-none ${
+                    isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-300'
+                  }`}
+                />
+                <input
+                  type="text"
+                  placeholder="URL (https://...)"
+                  value={customLinkUrl}
+                  onChange={(e) => setCustomLinkUrl(e.target.value)}
+                  className={`flex-1 p-2 border rounded-lg text-xs outline-none ${
+                    isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-300'
+                  }`}
+                />
+                <button
+                  type="button"
+                  onClick={handleAddCustomLink}
+                  className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold rounded-lg flex items-center gap-1 transition"
+                >
+                  <Plus className="w-3.5 h-3.5" /> Add
+                </button>
+              </div>
+            </div>
+
+            <button
+              onClick={handleSaveLinksAndApply}
+              className="w-full py-2.5 bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs rounded-lg transition shadow mt-3"
+            >
+              Save &amp; Apply All Links to Blog
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Airline Manager Modal */}
+      <AirlineManagerModal
+        isOpen={isManageModalOpen}
+        onClose={() => setIsManageModalOpen(false)}
+        airlines={airlines}
+        onSave={(updated) => setAirlines(updated)}
+      />
+
+      {/* Backend Config Modal */}
+      <BackendConfigModal
+        isOpen={showConfigModal}
+        onClose={() => setShowConfigModal(false)}
+        isDarkMode={isDarkMode}
+        currentConfig={{ publishSecret, googleAuthConfig }}
+        onSave={(config) => {
+          setPublishSecret(config.publishSecret);
+          setGoogleAuthConfig(config.googleAuthConfig);
+          localStorage.setItem('easyflight_publish_secret', config.publishSecret);
+          localStorage.setItem('easyflight_google_config', JSON.stringify(config.googleAuthConfig));
+          setStatusMessage('Configuration updated!');
+          setTimeout(() => setStatusMessage(null), 3000);
+        }}
+      />
+
+
+
+      {/* Inactivity Lock Modal (10 Minutes Timeout) */}
+      <InactivityLockModal
+        isOpen={isSessionLocked}
+        onUnlock={() => {
+          setIsSessionLocked(false);
+          lastActivityRef.current = Date.now();
+        }}
+        onFullLogout={handleFullLogout}
+        isDarkMode={isDarkMode}
+      />
+
+      {/* Footer with Developer Credits and Social Icons */}
+      <footer className={`border-t py-3 px-6 text-center text-xs flex flex-col sm:flex-row items-center justify-between gap-3 transition-colors ${
+        isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-400' : 'bg-white border-slate-200 text-slate-600 shadow-sm'
+      }`}>
+        <div className="flex items-center gap-1 font-mono text-[11px]">
+          <span>TFN Active:</span>
+          <span className="font-bold text-emerald-600 dark:text-emerald-400">{commonTfn}</span>
+        </div>
+
+        {/* Developer Attribution & Clean Icons (No app name mentioned) */}
+        <div className="flex items-center gap-2">
+          <span className="font-medium text-slate-700 dark:text-slate-300">Developed by Shashank Rajput</span>
+          <div className="flex items-center gap-2 ml-1">
+            <a
+              href="https://mail.google.com/mail/u/0/?fs=1&to=aws.shashanksingh@gmail.com&tf=cm"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="p-1 rounded-full hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-sky-600 transition"
+              title="Email"
+            >
+              <Mail className="w-3.5 h-3.5" />
+            </a>
+            <a
+              href="https://www.linkedin.com/in/shashankrajputx/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="p-1 rounded-full hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-blue-600 transition"
+              title="LinkedIn"
+            >
+              <Linkedin className="w-3.5 h-3.5" />
+            </a>
+            <a
+              href="https://www.instagram.com/shashankrajput.__/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="p-1 rounded-full hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-rose-600 transition"
+              title="Instagram"
+            >
+              <Instagram className="w-3.5 h-3.5" />
+            </a>
+          </div>
+        </div>
+
+        <button
+          onClick={handleFullLogout}
+          className="text-slate-500 hover:text-rose-500 flex items-center gap-1 text-[11px] font-semibold transition"
+          title="Sign out of Studio"
+        >
+          <LogOut className="w-3 h-3" />
+          <span>Lock / Exit</span>
+        </button>
+      </footer>
+
+    </div>
+  );
+}
