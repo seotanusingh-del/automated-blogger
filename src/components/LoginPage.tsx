@@ -4,13 +4,14 @@ import { Shield, Lock, ArrowRight, CheckCircle2, AlertCircle, Mail, Linkedin, In
 interface LoginPageProps {
   onLoginSuccess: () => void;
   isDarkMode: boolean;
+  onBackToPublic?: () => void;
 }
 
 const ADMIN_USER = '8081368879';
 const ADMIN_PASS = 'seo.8268';
 const ADMIN_OTP = '6307500844';
 
-export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, isDarkMode }) => {
+export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, isDarkMode, onBackToPublic }) => {
   const [step, setStep] = useState<1 | 2>(1);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -48,12 +49,26 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, isDarkMode
           isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
         }`}>
           
+          {onBackToPublic && (
+            <button
+              onClick={onBackToPublic}
+              className="mb-4 text-xs font-semibold text-sky-600 dark:text-sky-400 hover:underline flex items-center gap-1"
+            >
+              ← Back to Automated-Blogger Public Site
+            </button>
+          )}
+
           {/* Header */}
           <div className="text-center space-y-3 mb-6">
             <div className="w-12 h-12 mx-auto rounded-xl bg-gradient-to-tr from-sky-500 to-blue-600 flex items-center justify-center text-white shadow-md shadow-sky-500/20">
               <Shield className="w-6 h-6" />
             </div>
-            <h1 className="text-lg font-bold tracking-tight">Admin Authentication</h1>
+            <div>
+              <div className="text-xs font-bold text-sky-600 dark:text-sky-400 uppercase tracking-wider">
+                Automated-Blogger
+              </div>
+              <h1 className="text-lg font-bold tracking-tight">Publisher Authentication</h1>
+            </div>
           </div>
 
           {/* Error Message */}

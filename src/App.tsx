@@ -62,6 +62,7 @@ import { InactivityLockModal } from './components/InactivityLockModal';
 import { ReviewQueueManager } from './components/ReviewQueueManager';
 import { BloggerSubSettingsTab } from './components/BloggerSubSettingsTab';
 import { RefreshTokenModal } from './components/RefreshTokenModal';
+import { PublicLandingPage } from './components/PublicLandingPage';
 import { 
   generateDeepSeekContent, 
   generateFreeAiImageUrl, 
@@ -77,6 +78,8 @@ export default function App() {
   // Authentication & Session Security (Autolocks on page refresh or tab close)
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [isSessionLocked, setIsSessionLocked] = useState<boolean>(false);
+  const [isLoggingIn, setIsLoggingIn] = useState<boolean>(false);
+  const [showPublicPage, setShowPublicPage] = useState<boolean>(false);
   const lastActivityRef = useRef<number>(Date.now());
 
   // Theme state - Eye-friendly LIGHT THEME by default
@@ -996,15 +999,38 @@ export default function App() {
     a.offices.some((o: AirlineOffice) => o.name.toLowerCase().includes(airlineFilter.toLowerCase()))
   );
 
-  // If user is not authenticated on this tab load/refresh, show the secure LoginPage
+  // If user is not authenticated on this tab load/refresh, show the Public Landing Page by default
+  // (Ensures Google OAuth reviewers & Search Console can view the complete public application)
   if (!isAuthenticated) {
+    if (isLoggingIn) {
+      return (
+        <LoginPage 
+          onLoginSuccess={() => {
+            setIsAuthenticated(true);
+            setIsLoggingIn(false);
+            lastActivityRef.current = Date.now();
+          }}
+          onBackToPublic={() => setIsLoggingIn(false)}
+          isDarkMode={isDarkMode}
+        />
+      );
+    }
     return (
-      <LoginPage 
-        onLoginSuccess={() => {
-          setIsAuthenticated(true);
-          lastActivityRef.current = Date.now();
-        }}
+      <PublicLandingPage 
+        onOpenDashboard={() => setIsLoggingIn(true)}
         isDarkMode={isDarkMode}
+        onToggleTheme={toggleTheme}
+      />
+    );
+  }
+
+  // If user is authenticated but clicked to view the Public Site
+  if (showPublicPage) {
+    return (
+      <PublicLandingPage 
+        onOpenDashboard={() => setShowPublicPage(false)}
+        isDarkMode={isDarkMode}
+        onToggleTheme={toggleTheme}
       />
     );
   }
@@ -1023,15 +1049,29 @@ export default function App() {
             <Plane className="w-4 h-4 text-white" />
           </div>
           <div className="flex items-center gap-2">
-            <h1 className="text-sm font-bold tracking-tight">AutoBlog Engine</h1>
+            <h1 className="text-sm font-bold tracking-tight">Automated-Blogger</h1>
             <span className={`text-[11px] border-l pl-2 ${isDarkMode ? 'text-slate-400 border-slate-700' : 'text-slate-500 border-slate-300'}`}>
-              Production Flight SEO Studio
+              Blogger Publishing Dashboard
             </span>
           </div>
         </div>
 
         {/* Right Header: Service Account Badge, Theme Switcher, Website/Social Links, Account, Lock */}
         <div className="flex items-center gap-3">
+          
+          {/* Public Landing Page & Policies Button */}
+          <button
+            onClick={() => setShowPublicPage(true)}
+            className={`px-2.5 py-1.5 rounded-lg border text-xs flex items-center gap-1.5 transition ${
+              isDarkMode 
+                ? 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-sky-400' 
+                : 'bg-white hover:bg-slate-100 border-slate-300 text-sky-700 shadow-sm'
+            }`}
+            title="View Public Landing Page, Google Verification Info & Policies"
+          >
+            <Globe className="w-3.5 h-3.5" />
+            <span className="font-semibold">Public Site</span>
+          </button>
           
           {/* Connection Status Badge (Clickable to inspect/update token) */}
           <button
