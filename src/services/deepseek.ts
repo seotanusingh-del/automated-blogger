@@ -1,18 +1,26 @@
-import OpenAI from 'openai';
-
-const DEEPSEEK_API_KEY = import.meta.env.VITE_DEEPSEEK_API_KEY || ''; // Must be provided via env var
-
-const openai = new OpenAI({
-  apiKey: DEEPSEEK_API_KEY,
-  baseURL: 'https://api.deepseek.com',
-  dangerouslyAllowBrowser: true // Safe since this is a client-side tool with user-provided key
-});
-
 export interface BlogPostContent {
   title: string;
   overview: string;
   services: string[];
   faqs: { question: string; answer: string }[];
+}
+
+export function getDeepSeekApiKey(): string {
+  if (typeof window !== 'undefined') {
+    const saved = localStorage.getItem('easyflight_deepseek_key');
+    if (saved && saved.trim()) return saved.trim();
+  }
+  return (import.meta.env.VITE_DEEPSEEK_API_KEY || '').trim();
+}
+
+export function setDeepSeekApiKey(key: string) {
+  if (typeof window !== 'undefined') {
+    if (key && key.trim()) {
+      localStorage.setItem('easyflight_deepseek_key', key.trim());
+    } else {
+      localStorage.removeItem('easyflight_deepseek_key');
+    }
+  }
 }
 
 /**
@@ -55,6 +63,26 @@ Format as JSON:
 }`;
 
   try {
+    let apiKey = getDeepSeekApiKey();
+    if (!apiKey && typeof window !== 'undefined') {
+      const entered = window.prompt('Enter your DeepSeek API Key (sk-...) for AI generation:');
+      if (entered && entered.trim()) {
+        apiKey = entered.trim();
+        setDeepSeekApiKey(apiKey);
+      }
+    }
+
+    if (!apiKey) {
+      throw new Error('DeepSeek API Key is missing. Please provide a key to generate AI content.');
+    }
+
+    const { default: OpenAI } = await import('openai');
+    const openai = new OpenAI({
+      apiKey,
+      baseURL: 'https://api.deepseek.com',
+      dangerouslyAllowBrowser: true
+    });
+
     const response = await openai.chat.completions.create({
       model: 'deepseek-chat',
       messages: [

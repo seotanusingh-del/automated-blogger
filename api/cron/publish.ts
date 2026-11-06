@@ -1,25 +1,15 @@
 import { createClient } from '@supabase/supabase-js';
 import OpenAI from 'openai';
 
-const supabase = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_KEY!
-);
-
-const openai = new OpenAI({
-  apiKey: process.env.DEEPSEEK_API_KEY,
-  baseURL: 'https://api.deepseek.com',
-});
-
 async function getAccessToken(): Promise<string | null> {
   try {
     const res = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
-        client_id: process.env.GOOGLE_CLIENT_ID!,
-        client_secret: process.env.GOOGLE_CLIENT_SECRET!,
-        refresh_token: process.env.GOOGLE_REFRESH_TOKEN!,
+        client_id: process.env.GOOGLE_CLIENT_ID || '',
+        client_secret: process.env.GOOGLE_CLIENT_SECRET || '',
+        refresh_token: process.env.GOOGLE_REFRESH_TOKEN || '',
         grant_type: 'refresh_token',
       }),
     });
@@ -37,6 +27,24 @@ export default async function handler(req: any, res: any) {
   if (auth !== `Bearer ${process.env.CRON_SECRET}`) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
+
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_KEY) {
+    return res.status(500).json({ error: 'Missing SUPABASE_URL or SUPABASE_SERVICE_KEY.' });
+  }
+
+  if (!process.env.DEEPSEEK_API_KEY) {
+    return res.status(500).json({ error: 'Missing DEEPSEEK_API_KEY.' });
+  }
+
+  const supabase = createClient(
+    process.env.SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_KEY
+  );
+
+  const openai = new OpenAI({
+    apiKey: process.env.DEEPSEEK_API_KEY,
+    baseURL: 'https://api.deepseek.com',
+  });
 
   try {
     // 2. Fetch pending topic from Supabase Queue

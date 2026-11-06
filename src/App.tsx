@@ -61,7 +61,13 @@ import { LoginPage } from './components/LoginPage';
 import { InactivityLockModal } from './components/InactivityLockModal';
 import { ReviewQueueManager } from './components/ReviewQueueManager';
 import { BloggerSubSettingsTab } from './components/BloggerSubSettingsTab';
-import { generateDeepSeekContent, generateFreeAiImageUrl, BlogPostContent } from './services/deepseek';
+import { 
+  generateDeepSeekContent, 
+  generateFreeAiImageUrl, 
+  BlogPostContent, 
+  getDeepSeekApiKey, 
+  setDeepSeekApiKey 
+} from './services/deepseek';
 import { getRecentPosts, savePostToSupabase } from './services/supabase';
 
 const INACTIVITY_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
@@ -80,6 +86,7 @@ export default function App() {
   // Backend Connection State
   const [isBackendConnected, setIsBackendConnected] = useState<boolean>(false);
   const [publishSecret, setPublishSecret] = useState<string>(() => localStorage.getItem('easyflight_publish_secret') || '');
+  const [deepSeekKey, setDeepSeekKey] = useState<string>(() => getDeepSeekApiKey());
 
   // Target Blogger ID
   const [blogId, setBlogId] = useState<string>(() => {
@@ -968,6 +975,28 @@ export default function App() {
           >
             <Lock className="w-3.5 h-3.5" />
             <span className="font-semibold">{publishSecret ? 'Secret Set' : 'Set Secret'}</span>
+          </button>
+
+          {/* DeepSeek Key Config Button */}
+          <button
+            onClick={() => {
+              const key = prompt('Enter DeepSeek API Key (sk-...) for AI blog generation:', deepSeekKey);
+              if (key !== null) {
+                setDeepSeekApiKey(key.trim());
+                setDeepSeekKey(key.trim());
+                setStatusMessage(key.trim() ? 'DeepSeek API Key updated!' : 'DeepSeek API Key cleared.');
+                setTimeout(() => setStatusMessage(null), 3000);
+              }
+            }}
+            className={`p-2 rounded-lg border text-xs flex items-center gap-1.5 transition ${
+              deepSeekKey
+                ? (isDarkMode ? 'bg-sky-950/20 border-sky-800 text-sky-400' : 'bg-sky-50 border-sky-200 text-sky-600')
+                : (isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-white border-slate-300 text-slate-700')
+            }`}
+            title="Configure DeepSeek API Key for AI blog generation"
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            <span className="font-semibold">{deepSeekKey ? 'AI Key Set' : 'Set AI Key'}</span>
           </button>
 
           {/* Light / Dark Mode Toggle Button */}
