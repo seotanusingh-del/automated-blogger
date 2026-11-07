@@ -112,9 +112,17 @@ Return valid JSON with this exact structure:
 
     if (res.ok) {
       const data = await res.json();
-      if (data.success && data.data) {
+      if (
+        data.success &&
+        data.data &&
+        typeof data.data.title === 'string' &&
+        typeof data.data.overview === 'string' &&
+        Array.isArray(data.data.services) &&
+        Array.isArray(data.data.faqs)
+      ) {
         return data.data as BlogPostContent;
       }
+      throw new Error('AI service returned incomplete blog content.');
     } else {
       const err = await res.json().catch(() => ({}));
       // If server is missing DEEPSEEK_API_KEY and client doesn't have one either, prompt user as fallback

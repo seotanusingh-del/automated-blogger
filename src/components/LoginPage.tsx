@@ -62,7 +62,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, isDarkMode
           {/* Header */}
           <div className="text-center space-y-3 mb-6">
             <img
-              src={`${import.meta.env.VITE_SUPABASE_URL || ''}/storage/v1/object/public/DATA/Logo/Automation%20workflow%20logo.png`}
+              src="https://gplxknbnohajegmxkvot.supabase.co/storage/v1/object/public/DATA/Logo/Automation%20workflow%20logo.png"
               alt="Automated-Blogger"
               className="w-20 h-20 mx-auto object-contain rounded-xl"
             />

@@ -6,6 +6,63 @@ dotenv.config();
 const app = express();
 app.use(express.json({ limit: '10mb' }));
 
+const storageUrl = process.env.SUPABASE_URL || 'https://gplxknbnohajegmxkvot.supabase.co';
+const storageBucket = 'DATA';
+const publicStorageUrl = `${storageUrl}/storage/v1/object/public/${storageBucket}`;
+
+app.get(['/api/storage/images', '/storage/images'], async (req, res) => {
+  const prefix = String(req.query.prefix || '');
+  const serviceKey = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!serviceKey) {
+    return res.status(503).json({ error: 'Supabase service storage is not configured.' });
+  }
+  try {
+    const response = await fetch(`${storageUrl}/storage/v1/object/list/${storageBucket}`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${serviceKey}`,
+        apikey: serviceKey,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ prefix, limit: 100, sortBy: { column: 'name', order: 'asc' } })
+    });
+    const files = await response.json();
+    if (!response.ok) return res.status(response.status).json({ error: files?.message || 'Storage listing failed.' });
+    const images = (Array.isArray(files) ? files : [])
+      .filter((file: { name?: string }) => !!file.name && /\.(avif|gif|jpe?g|png|webp)$/i.test(file.name))
+      .map((file: { name: string }) => `${publicStorageUrl}/${prefix ? `${prefix}/` : ''}${encodeURIComponent(file.name)}`);
+    res.json({ images });
+  } catch (error) {
+    res.status(500).json({ error: error instanceof Error ? error.message : 'Storage listing failed.' });
+  }
+});
+
+app.post(['/api/storage/upload', '/storage/upload'], async (req, res) => {
+  const serviceKey = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const { filename, contentType, data } = req.body || {};
+  if (!serviceKey) return res.status(503).json({ error: 'Supabase service storage is not configured.' });
+  if (!filename || !data) return res.status(400).json({ error: 'Missing image filename or data.' });
+  const safeName = String(filename).replace(/[^a-zA-Z0-9._-]/g, '-');
+  const path = `Blog/${Date.now()}-${safeName}`;
+  try {
+    const response = await fetch(`${storageUrl}/storage/v1/object/${storageBucket}/${path}`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${serviceKey}`,
+        apikey: serviceKey,
+        'Content-Type': contentType || 'image/png',
+        'x-upsert': 'false'
+      },
+      body: Buffer.from(String(data), 'base64')
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) return res.status(response.status).json({ error: result?.message || 'Image upload failed.' });
+    res.json({ url: `${publicStorageUrl}/${path.split('/').map(encodeURIComponent).join('/')}` });
+  } catch (error) {
+    res.status(500).json({ error: error instanceof Error ? error.message : 'Image upload failed.' });
+  }
+});
+
 /**
  * Standardized Access Token Retrieval using Refresh Token
  */

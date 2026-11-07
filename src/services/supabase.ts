@@ -12,7 +12,12 @@ export const SUPABASE_PUBLIC_URL = supabaseUrl || 'https://gplxknbnohajegmxkvot.
 const IMAGE_BUCKET = 'DATA';
 
 export async function listPublicBucketImages(prefix = ''): Promise<string[]> {
-  if (!supabase) return [];
+  if (!supabase) {
+    const response = await fetch(`/api/storage/images?prefix=${encodeURIComponent(prefix)}`);
+    if (!response.ok) throw new Error('Public image library could not be loaded.');
+    const data = await response.json();
+    return Array.isArray(data.images) ? data.images : [];
+  }
   const { data, error } = await supabase.storage.from(IMAGE_BUCKET).list(prefix, {
     limit: 100,
     sortBy: { column: 'name', order: 'asc' }
@@ -25,7 +30,23 @@ export async function listPublicBucketImages(prefix = ''): Promise<string[]> {
 
 export async function uploadImageToPublicBucket(file: Blob, filename: string): Promise<string> {
   if (!supabase) {
-    throw new Error('Image storage is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.');
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    let binary = '';
+    bytes.forEach(byte => { binary += String.fromCharCode(byte); });
+    const response = await fetch('/api/storage/upload', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        filename,
+        contentType: file.type || 'image/png',
+        data: btoa(binary)
+      })
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || !result.url) {
+      throw new Error(result.error || 'Image upload failed. Configure Supabase storage on the server.');
+    }
+    return result.url;
   }
   const safeName = filename.replace(/[^a-zA-Z0-9._-]/g, '-');
   const path = `Blog/${Date.now()}-${safeName}`;

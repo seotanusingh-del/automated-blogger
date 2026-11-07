@@ -300,8 +300,8 @@ export default function App() {
   }, [customImages]);
 
   useEffect(() => {
-    Promise.all([listPublicBucketImages(''), listPublicBucketImages('Logo')])
-      .then(([rootImages, logoImages]) => setImageLibrary([...new Set([...rootImages, ...logoImages])]))
+    Promise.all([listPublicBucketImages('airlines'), listPublicBucketImages('Blog')])
+      .then(([airlineImages, blogImages]) => setImageLibrary([...new Set([...airlineImages, ...blogImages])]))
       .catch(error => console.warn('Could not load public image library:', error));
   }, []);
 
@@ -568,7 +568,7 @@ export default function App() {
       setStatusMessage(`AI Generation Complete for ${post.airlineName}!`);
     } catch (error) {
       console.error('AI Generation failed:', error);
-      setStatusMessage('AI Generation failed. Check console or DeepSeek key.');
+      setStatusMessage(error instanceof Error ? `AI generation issue: ${error.message}` : 'AI generation failed; keyword fallback was unavailable.');
       const fallbackPosts = [...generatedPosts];
       fallbackPosts[index] = { ...post, status: 'Error' };
       setGeneratedPosts(fallbackPosts);
