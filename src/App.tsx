@@ -176,6 +176,9 @@ export default function App() {
   });
   const [imageLibrary, setImageLibrary] = useState<string[]>([]);
   const [isUploadingImages, setIsUploadingImages] = useState(false);
+  const [savedTemplates, setSavedTemplates] = useState<GeneratedPost[]>(() => {
+    try { return JSON.parse(localStorage.getItem('easyflight_saved_templates') || '[]'); } catch { return []; }
+  });
 
   // Queue & Review State (Hydrates compact storage or full draft)
   const [generatedPosts, setGeneratedPosts] = useState<GeneratedPost[]>(() => {
@@ -311,6 +314,10 @@ export default function App() {
       .then(([airlineImages, blogImages]) => setImageLibrary([...new Set([...airlineImages, ...blogImages])]))
       .catch(error => console.warn('Could not load public image library:', error));
   }, []);
+
+  useEffect(() => {
+    localStorage.setItem('easyflight_saved_templates', JSON.stringify(savedTemplates));
+  }, [savedTemplates]);
 
   // 10-Minute Inactivity Activity Tracker
   useEffect(() => {
@@ -460,6 +467,46 @@ export default function App() {
   };
 
   const removeCustomImage = (index: number) => setCustomImages(current => current.filter((_, i) => i !== index));
+
+  const saveActiveAsTemplate = () => {
+    if (!activePost) return;
+    const name = prompt('Name this reusable draft template:', `${activePost.airlineName} ${activePost.keyword}`);
+    if (!name?.trim()) return;
+    setSavedTemplates(current => [{ ...activePost, id: `template-${Date.now()}`, status: 'Draft' }, ...current]);
+    setStatusMessage(`Saved template "${name.trim()}".`);
+  };
+
+  const loadTemplate = (template: GeneratedPost) => {
+    const copy = {
+      ...template,
+      id: `draft-${Date.now()}`,
+      status: 'Draft' as const,
+      publishedUrl: undefined,
+      title: template.title,
+      sections: template.sections ? { ...template.sections, faqs: [...template.sections.faqs], servicesList: [...template.sections.servicesList] } : undefined
+    };
+    setGeneratedPosts(current => [...current, copy]);
+    setCurrentPostIndex(generatedPosts.length);
+    setStatusMessage('Draft template added to the review queue.');
+  };
+
+  const createBlankDraft = () => {
+    if (!selectedAirlines[0]) {
+      setStatusMessage('Select an airline before creating a draft.');
+      return;
+    }
+    const office = selectedAirlines[0].offices[0] || {
+      id: `${selectedAirlines[0].id}-draft`,
+      name: `${selectedAirlines[0].name} Office`,
+      city: 'Headquarters',
+      country: 'United States'
+    };
+    const draft = generateOfficeBlogPost(selectedAirlines[0], office, targetKeyword, commonTfn, customImages[0], socialLinks, isDarkMode ? 'dark' : 'light');
+    draft.status = 'Draft';
+    setGeneratedPosts(current => [...current, draft]);
+    setCurrentPostIndex(generatedPosts.length);
+    setStatusMessage('Blank editable draft added to the review queue.');
+  };
 
   // Bulk Post Generator
   const handleGenerateBulkPosts = () => {
@@ -623,7 +670,7 @@ export default function App() {
         total: workingPosts.length, 
         currentTitle: `Writing AI Guide: ${post.airlineName} (${post.city})` 
       });
-      setStatusMessage(`[${i + 1}/${workingPosts.length}] Generating unique DeepSeek content for ${post.airlineName} - ${post.city}...`);
+      setStatusMessage(`[${i + 1}/${workingPosts.length}] Generating unique ${aiProvider} content for ${post.airlineName} - ${post.city}...`);
 
       try {
         const history = await getRecentPosts(post.airlineName, post.city);
@@ -694,7 +741,7 @@ export default function App() {
 
     setIsGeneratingBulk(false);
     setBulkProgress(null);
-    setStatusMessage(`Bulk AI Generation Complete! ${workingPosts.length} posts generated with unique DeepSeek content.`);
+    setStatusMessage(`Bulk AI Generation Complete! ${workingPosts.length} posts generated with unique ${aiProvider} content.`);
     setTimeout(() => setStatusMessage(null), 5000);
   };
 
@@ -1474,10 +1521,10 @@ export default function App() {
                   onClick={handleGenerateBulkAI}
                   disabled={isGeneratingBulk || selectedAirlines.length === 0}
                   className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-bold transition flex items-center gap-1.5 flex-1 justify-center shadow"
-                  title="Generate 100% unique, human-grade SEO articles using DeepSeek AI"
+                  title={`Generate 100% unique, human-grade SEO articles using ${aiProvider}`}
                 >
                   <Sparkles className={`w-4 h-4 ${isGeneratingBulk && bulkProgress ? 'animate-spin' : ''}`} />
-                  {isGeneratingBulk && bulkProgress ? 'DeepSeek Writing...' : '✨ Bulk AI Magic (DeepSeek)'}
+                  {isGeneratingBulk && bulkProgress ? `${aiProvider} Writing...` : `✨ Bulk AI Magic (${aiProvider})`}
                 </button>
               </div>
 
@@ -1530,6 +1577,48 @@ export default function App() {
                       ))}
                     </div>
                   </>
+                )}
+                {imageLibrary.length === 0 && !isUploadingImages && (
+                  <p className="mt-3 rounded-lg bg-amber-500/10 p-2 text-[11px] text-amber-700 dark:text-amber-300">
+                    No public images were returned. Configure the Supabase anon key for listing or use Upload images.
+                  </p>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    Promise.all([listPublicBucketImages('airlines'), listPublicBucketImages('Blog')])
+                      .then(([airlineImages, blogImages]) => setImageLibrary([...new Set([...airlineImages, ...blogImages])]))
+                      .catch(error => setStatusMessage(error instanceof Error ? error.message : 'Image library refresh failed.'));
+                  }}
+                  className="mt-3 text-[11px] font-semibold text-sky-600 hover:underline dark:text-sky-400"
+                >
+                  Refresh public image library
+                </button>
+              </div>
+
+              <div className={`rounded-xl border p-4 ${isDarkMode ? 'border-slate-800 bg-slate-950/60' : 'border-slate-200 bg-slate-50'}`}>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="text-xs font-bold">Draft &amp; Template Manager</p>
+                    <p className="text-[11px] text-slate-500">Save reusable structures, create your own drafts, and load them into the queue.</p>
+                  </div>
+                  <div className="flex gap-2">
+                    <button type="button" onClick={createBlankDraft} className="rounded-lg border border-slate-300 px-2.5 py-1.5 text-[11px] font-semibold dark:border-slate-700">New draft</button>
+                    <button type="button" onClick={saveActiveAsTemplate} disabled={!activePost} className="rounded-lg bg-sky-600 px-2.5 py-1.5 text-[11px] font-semibold text-white disabled:opacity-50">Save active template</button>
+                  </div>
+                </div>
+                {savedTemplates.length > 0 && (
+                  <div className="mt-3 space-y-2">
+                    {savedTemplates.map(template => (
+                      <div key={template.id} className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white p-2 text-[11px] dark:border-slate-800 dark:bg-slate-900">
+                        <span className="truncate font-medium">{template.title}</span>
+                        <div className="flex shrink-0 gap-2">
+                          <button type="button" onClick={() => loadTemplate(template)} className="font-semibold text-sky-600 hover:underline">Use</button>
+                          <button type="button" onClick={() => setSavedTemplates(current => current.filter(item => item.id !== template.id))} className="font-semibold text-rose-500 hover:underline">Delete</button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 )}
               </div>
 
@@ -1693,10 +1782,10 @@ export default function App() {
                       <span className="truncate max-w-sm font-medium">{activePost.title}</span>
                       {activePost.isAiGenerated ? (
                         <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20 flex items-center gap-1 shrink-0">
-                          <Sparkles className="w-2.5 h-2.5" /> DeepSeek AI
+                          <Sparkles className="w-2.5 h-2.5" /> {aiProvider}
                         </span>
                       ) : (
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 shrink-0" title="This post currently uses the template skeleton. Click 'Generate with DeepSeek' to rewrite it with AI.">
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 shrink-0" title={`This post currently uses the template skeleton. Click 'Generate with ${aiProvider}' to rewrite it with AI.`}>
                           Template Draft
                         </span>
                       )}
@@ -1705,9 +1794,9 @@ export default function App() {
                       <button
                         onClick={() => handleGenerateAIPost(currentPostIndex)}
                         className="bg-emerald-600 hover:bg-emerald-500 text-white px-2.5 py-1 rounded flex items-center gap-1 font-bold text-[11px] shadow-sm transition"
-                        title="Rewrite this blog post with 100% unique DeepSeek AI content"
+                        title={`Rewrite this blog post with 100% unique ${aiProvider} content`}
                       >
-                        <Sparkles className="w-3.5 h-3.5" /> Generate with DeepSeek
+                        <Sparkles className="w-3.5 h-3.5" /> Generate with {aiProvider}
                       </button>
                       <button
                         onClick={handleRegenerateBanner}

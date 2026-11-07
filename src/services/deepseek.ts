@@ -16,10 +16,11 @@ export function setAiProvider(provider: AiProvider) {
 }
 
 export function getGeminiApiKey(): string {
-  return localStorage.getItem('easyflight_gemini_key') || '';
+  return typeof window === 'undefined' ? '' : localStorage.getItem('easyflight_gemini_key') || '';
 }
 
 export function setGeminiApiKey(key: string) {
+  if (typeof window === 'undefined') return;
   if (key.trim()) localStorage.setItem('easyflight_gemini_key', key.trim());
   else localStorage.removeItem('easyflight_gemini_key');
 }
