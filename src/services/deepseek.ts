@@ -5,6 +5,30 @@ export interface BlogPostContent {
   faqs: { question: string; answer: string }[];
 }
 
+function buildKeywordFallback(airlineName: string, city: string, keyword: string, tfn: string): BlogPostContent {
+  const topic = keyword.trim() || `${airlineName} missed flight policy`;
+  const cleanTfn = tfn.trim() || '+1-888-794-3464';
+  return {
+    title: `${airlineName} ${city} ${topic}: Rules, Fees, Rebooking & Passenger Guide`,
+    overview: `Searching for ${topic}? This practical ${airlineName} guide explains the key steps passengers should take in ${city}, including what to do first, which reservation details to keep ready, and what questions to ask before accepting a new itinerary.\n\n${airlineName} passengers should contact the reservations team as soon as a travel problem occurs. Rebooking, fees, onward segments, refunds, and schedule changes depend on the fare and the circumstances, so travelers should confirm the current rule for their booking rather than assume a missed flight and an airline cancellation are treated the same way.\n\nFor immediate assistance with ${topic}, keep your confirmation number available and call ${cleanTfn}.`,
+    services: [
+      `Help with ${topic} and reservation questions`,
+      'Flight rebooking and alternate departure checks',
+      'Change-fee and fare-difference explanations',
+      'Return and onward reservation status checks',
+      'Cancellation, refund, and credit guidance',
+      'Baggage, check-in, and airport timing assistance'
+    ],
+    faqs: [
+      { question: `What is the first step for ${topic}?`, answer: `Contact the airline promptly, explain the situation, and keep your confirmation details ready. Call ${cleanTfn} for assistance.` },
+      { question: `Can ${airlineName} rebook my reservation?`, answer: `Rebooking depends on available flights and the conditions attached to your reservation. Ask about fees and fare differences before confirming.` },
+      { question: 'Could a return or onward flight be affected?', answer: 'Some no-show conditions may affect remaining segments. Ask the reservations team to confirm every active segment.' },
+      { question: 'Are refunds guaranteed?', answer: 'Refund eligibility depends on the fare rules and the reason for the disruption. Confirm the outcome before making a new payment.' },
+      { question: `Where can I get help with ${topic}?`, answer: `Have your booking reference ready and contact the reservations team at ${cleanTfn} for current guidance.` }
+    ]
+  };
+}
+
 export function getDeepSeekApiKey(): string {
   if (typeof window !== 'undefined') {
     const saved = localStorage.getItem('easyflight_deepseek_key');
@@ -54,9 +78,11 @@ CRITICAL: Do NOT reuse phrasing, structures, or angles from previous posts. Make
 
 Requirements:
 1. High-CTR SEO Title (incorporate airline name, city, primary keyword, and clear value proposition). Use a fresh title pattern that is materially different from previous titles.
-2. Engaging, In-Depth Overview (2-3 detailed paragraphs covering the city's importance to ${airlineName} passengers, airport/terminal access, booking changes, missed connections, and dispute escalations).
-3. 6-8 Specific Airline Services (e.g. ticket reissue, baggage claim tracking, seat upgrades, infant/pet policies, DOT compensation claims, wheelchair assistance).
-4. 5 Thorough, Unique FAQs with realistic answers that seamlessly embed the toll-free assistance number (${tfn}).
+2. Follow this reader-friendly structure: introduction, "What Is [topic]?", "What Happens If...", step-by-step rebooking/help instructions, fees or conditions, cancellation differences, practical tips, FAQs, and a final contact section.
+3. Engaging, in-depth overview (3 distinct paragraphs) covering the keyword intent, ${city} traveler context, booking changes, missed connections, and dispute escalations. Use the user's exact keyword naturally in the title, first paragraph, one subheading, and at least two FAQs.
+4. 6-8 specific services or actions (e.g. ticket reissue, baggage claim tracking, seat upgrades, infant/pet policies, compensation claims, wheelchair assistance).
+5. 5 thorough, unique FAQs with realistic answers that seamlessly embed the toll-free assistance number (${tfn}).
+6. Use factual, cautious language: do not invent an airline rule, fee, route, or legal entitlement. Attribute supplied policy details as published terms when the user provides them.
 
 Return valid JSON with this exact structure:
 {
@@ -99,7 +125,7 @@ Return valid JSON with this exact structure:
           );
           if (entered && entered.trim()) {
             setDeepSeekApiKey(entered.trim());
-            return generateDeepSeekContent(airlineName, city, country, keyword, tfn, recentPosts);
+            return generateDeepSeekContent(airlineName, city, country, keyword, tfn, recentPosts, requestVariationSeed);
           }
         }
       }
@@ -110,9 +136,7 @@ Return valid JSON with this exact structure:
   } catch (backendError: any) {
     // If backend proxy failed with a non-404 error (e.g. rate limit, bad prompt), propagate or fallback to client
     const customKey = getDeepSeekApiKey();
-    if (!customKey) {
-      throw backendError;
-    }
+    if (!customKey) return buildKeywordFallback(airlineName, city, keyword, tfn);
 
     // Client-side fallback if customKey is present
     const { default: OpenAI } = await import('openai');
@@ -135,9 +159,13 @@ Return valid JSON with this exact structure:
     const content = response.choices[0].message.content;
     if (!content) throw new Error('Empty response from DeepSeek');
     
-    return JSON.parse(content) as BlogPostContent;
+    const parsed = JSON.parse(content) as BlogPostContent;
+    if (!parsed.title || !parsed.overview || !Array.isArray(parsed.services) || !Array.isArray(parsed.faqs)) {
+      throw new Error('DeepSeek returned incomplete blog content.');
+    }
+    return parsed;
   }
-  throw new Error('Failed to generate AI blog content.');
+  return buildKeywordFallback(airlineName, city, keyword, tfn);
 }
 
 /**

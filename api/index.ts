@@ -157,9 +157,11 @@ CRITICAL: Do NOT reuse phrasing, structures, or angles from previous posts. Make
 
 Requirements:
 1. High-CTR SEO Title (incorporate airline name, city, primary keyword, and clear value proposition). Use a fresh title pattern that differs from previous titles.
-2. Engaging, In-Depth Overview (2-3 detailed paragraphs covering the city's importance to ${airlineName} passengers, airport/terminal access, booking changes, missed connections, and dispute escalations).
-3. 6-8 Specific Airline Services (e.g. ticket reissue, baggage claim tracking, seat upgrades, infant/pet policies, DOT compensation claims, wheelchair assistance).
-4. 5 Thorough, Unique FAQs with realistic answers that seamlessly embed the toll-free assistance number (${tfn}).
+2. Follow this structure: introduction, "What Is [topic]?", "What Happens If...", step-by-step help instructions, fees or conditions, cancellation differences, practical tips, FAQs, and a final contact section.
+3. Write 3 distinct overview paragraphs covering the keyword intent, ${city} traveler context, booking changes, missed connections, and dispute escalations. Use the exact keyword naturally in the title, first paragraph, one subheading, and at least two FAQs.
+4. Provide 6-8 specific services or actions (e.g. ticket reissue, baggage claim tracking, seat upgrades, infant/pet policies, compensation claims, wheelchair assistance).
+5. Provide 5 thorough, unique FAQs with realistic answers that seamlessly embed the toll-free assistance number (${tfn}).
+6. Use factual, cautious language. Do not invent an airline rule, fee, route, or legal entitlement. Attribute supplied policy details as published terms when provided.
 
 Return valid JSON with this exact structure:
 {
@@ -205,7 +207,7 @@ app.post(['/api/blogger/publish', '/blogger/publish'], async (req, res) => {
     return res.status(401).json({ error: 'Unauthorized. Invalid or missing PUBLISH_SECRET.' });
   }
 
-  const { title, content, labels, isDraft, customMetaData, refreshToken } = req.body;
+  const { title, content, labels, isDraft, refreshToken } = req.body;
   const blogId = req.body.blogId || process.env.BLOGGER_BLOG_ID;
 
   if (!blogId || !title || !content) {
@@ -225,7 +227,6 @@ app.post(['/api/blogger/publish', '/blogger/publish'], async (req, res) => {
     const url = `https://www.googleapis.com/blogger/v3/blogs/${encodeURIComponent(blogId)}/posts${isDraft ? '?isDraft=true' : ''}`;
     const payload: any = { title, content };
     if (labels?.length) payload.labels = labels;
-    if (customMetaData) payload.customMetaData = String(customMetaData).trim();
 
     const r = await fetch(url, {
       method: 'POST',

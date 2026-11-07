@@ -70,7 +70,12 @@ import {
   getDeepSeekApiKey, 
   setDeepSeekApiKey 
 } from './services/deepseek';
-import { getRecentPosts, savePostToSupabase } from './services/supabase';
+import {
+  getRecentPosts,
+  listPublicBucketImages,
+  savePostToSupabase,
+  uploadImageToPublicBucket
+} from './services/supabase';
 
 const INACTIVITY_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 
@@ -162,6 +167,8 @@ export default function App() {
   const [customImages, setCustomImages] = useState<string[]>(() => {
     try { return JSON.parse(localStorage.getItem('easyflight_custom_images') || '[]'); } catch { return []; }
   });
+  const [imageLibrary, setImageLibrary] = useState<string[]>([]);
+  const [isUploadingImages, setIsUploadingImages] = useState(false);
 
   // Queue & Review State (Hydrates compact storage or full draft)
   const [generatedPosts, setGeneratedPosts] = useState<GeneratedPost[]>(() => {
@@ -288,9 +295,15 @@ export default function App() {
   }, [airlines]);
 
   useEffect(() => {
-    try { localStorage.setItem('easyflight_custom_images', JSON.stringify(customImages)); }
+    try { localStorage.setItem('easyflight_custom_images', JSON.stringify(customImages.filter(url => !url.startsWith('data:')))); }
     catch (error) { console.warn('Could not save custom images locally:', error); }
   }, [customImages]);
+
+  useEffect(() => {
+    Promise.all([listPublicBucketImages(''), listPublicBucketImages('Logo')])
+      .then(([rootImages, logoImages]) => setImageLibrary([...new Set([...rootImages, ...logoImages])]))
+      .catch(error => console.warn('Could not load public image library:', error));
+  }, []);
 
   // 10-Minute Inactivity Activity Tracker
   useEffect(() => {
@@ -423,13 +436,20 @@ export default function App() {
 
   const selectedAirlines = airlines.filter((a: AirlineItem) => a.selected);
 
-  const addCustomImages = (files: FileList | File[]) => {
+  const addCustomImages = async (files: FileList | File[]) => {
     const imageFiles = Array.from(files).filter(file => file.type.startsWith('image/'));
-    imageFiles.forEach(file => {
-      const reader = new FileReader();
-      reader.onload = () => setCustomImages(current => [...current, String(reader.result)]);
-      reader.readAsDataURL(file);
-    });
+    if (!imageFiles.length) return;
+    setIsUploadingImages(true);
+    try {
+      const uploaded = await Promise.all(imageFiles.map(file => uploadImageToPublicBucket(file, file.name)));
+      setCustomImages(current => [...current, ...uploaded]);
+      setImageLibrary(current => [...current, ...uploaded]);
+    } catch (error) {
+      console.error('Image upload failed:', error);
+      setStatusMessage(error instanceof Error ? error.message : 'Image upload failed.');
+    } finally {
+      setIsUploadingImages(false);
+    }
   };
 
   const removeCustomImage = (index: number) => setCustomImages(current => current.filter((_, i) => i !== index));
@@ -693,6 +713,18 @@ export default function App() {
     )
   });
 
+  const makePostPublishable = async (post: GeneratedPost): Promise<GeneratedPost> => {
+    if (!post.imageUrl.startsWith('data:')) return post;
+    const response = await fetch(post.imageUrl);
+    const blob = await response.blob();
+    const publicUrl = await uploadImageToPublicBucket(blob, `${post.airlineName}-${post.city}-blog.png`);
+    return {
+      ...post,
+      imageUrl: publicUrl,
+      htmlContent: post.htmlContent.replace(/src="data:image\/[^"]+"/, `src="${publicUrl}"`)
+    };
+  };
+
   // Easy Non-Technical Section Update. Shared edits are applied to every
   // unpublished draft so the queue remains consistent before publishing.
   const handleUpdateSection = (field: keyof PostSections, value: any) => {
@@ -758,16 +790,18 @@ export default function App() {
   const handleCustomImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0 || !activePost) return;
     const file = e.target.files[0];
-    const reader = new FileReader();
-    reader.onload = () => {
-      const imageUrl = String(reader.result);
+    void uploadImageToPublicBucket(file, file.name).then(imageUrl => {
+      setCustomImages(current => [...current, imageUrl]);
+      setImageLibrary(current => [...current, imageUrl]);
       setGeneratedPosts(posts => posts.map(post => rebuildPost(
         post,
         post.sections || activePost.sections!,
         imageUrl
       )));
-    };
-    reader.readAsDataURL(file);
+    }).catch(error => {
+      console.error('Image upload failed:', error);
+      setStatusMessage(error instanceof Error ? error.message : 'Image upload failed.');
+    });
   };
 
   // Add custom link in modal
@@ -858,6 +892,12 @@ export default function App() {
     setAuthorInviteNotice(null);
 
     try {
+      const publishablePost = await makePostPublishable(targetPost);
+      if (publishablePost.imageUrl !== targetPost.imageUrl) {
+        const nextPosts = [...generatedPosts];
+        nextPosts[index] = publishablePost;
+        setGeneratedPosts(nextPosts);
+      }
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
         'X-Requested-With': 'XMLHttpRequest',
@@ -872,12 +912,12 @@ export default function App() {
         headers,
         body: JSON.stringify({
           blogId: blogId,
-          title: targetPost.title,
-          content: targetPost.htmlContent,
-          labels: targetPost.bloggerSettings?.labels || targetPost.labels,
-          customMetaData: targetPost.bloggerSettings?.searchDescription,
-          location: targetPost.bloggerSettings?.location,
-          readerComments: targetPost.bloggerSettings?.readerComments,
+          title: publishablePost.title,
+          content: publishablePost.htmlContent,
+          labels: publishablePost.bloggerSettings?.labels || publishablePost.labels,
+          customMetaData: publishablePost.bloggerSettings?.searchDescription,
+          location: publishablePost.bloggerSettings?.location,
+          readerComments: publishablePost.bloggerSettings?.readerComments,
           isDraft: false,
           refreshToken: customRefreshToken || undefined
         })
@@ -886,7 +926,7 @@ export default function App() {
       const data = await res.json();
       if (res.ok && data.success) {
         const liveUrl = data.url || TARGET_BLOG_URL;
-        const updated = { ...targetPost, status: 'Published' as const, publishedUrl: liveUrl };
+        const updated = { ...publishablePost, status: 'Published' as const, publishedUrl: liveUrl };
         const newPosts = [...generatedPosts];
         newPosts[index] = updated;
         setGeneratedPosts(newPosts);
@@ -894,10 +934,10 @@ export default function App() {
         
         // Save to Supabase on success
         savePostToSupabase({
-          title: targetPost.title,
-          content: targetPost.htmlContent,
-          airline_name: targetPost.airlineName,
-          city: targetPost.city
+          title: publishablePost.title,
+          content: publishablePost.htmlContent,
+          airline_name: publishablePost.airlineName,
+          city: publishablePost.city
         });
       } else {
         if (data.code === 'REFRESH_TOKEN_EXPIRED' || data.code === 'MISSING_REFRESH_TOKEN' || data.needsConfig) {
@@ -952,17 +992,19 @@ export default function App() {
       });
 
       try {
+        const publishablePost = await makePostPublishable(postToPublish);
+        updatedQueue[idx] = publishablePost;
         const res = await fetch('/api/blogger/publish', {
           method: 'POST',
           headers,
           body: JSON.stringify({
             blogId: blogId,
-            title: postToPublish.title,
-            content: postToPublish.htmlContent,
-            labels: postToPublish.bloggerSettings?.labels || postToPublish.labels,
-            customMetaData: postToPublish.bloggerSettings?.searchDescription,
-            location: postToPublish.bloggerSettings?.location,
-            readerComments: postToPublish.bloggerSettings?.readerComments,
+            title: publishablePost.title,
+            content: publishablePost.htmlContent,
+            labels: publishablePost.bloggerSettings?.labels || publishablePost.labels,
+            customMetaData: publishablePost.bloggerSettings?.searchDescription,
+            location: publishablePost.bloggerSettings?.location,
+            readerComments: publishablePost.bloggerSettings?.readerComments,
             isDraft: false,
             refreshToken: customRefreshToken || undefined
           })
@@ -971,7 +1013,7 @@ export default function App() {
         const data = await res.json();
         if (res.ok && data.success) {
           updatedQueue[idx] = {
-            ...postToPublish,
+            ...publishablePost,
             status: 'Published',
             publishedUrl: data.url || TARGET_BLOG_URL
           };
@@ -979,10 +1021,10 @@ export default function App() {
 
           // Save to Supabase on success
           savePostToSupabase({
-            title: postToPublish.title,
-            content: postToPublish.htmlContent,
-            airline_name: postToPublish.airlineName,
-            city: postToPublish.city
+            title: publishablePost.title,
+            content: publishablePost.htmlContent,
+            airline_name: publishablePost.airlineName,
+            city: publishablePost.city
           });
         } else {
           if (data.code === 'REFRESH_TOKEN_EXPIRED' || data.code === 'MISSING_REFRESH_TOKEN' || data.needsConfig) {
@@ -1440,10 +1482,10 @@ export default function App() {
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <p className="text-xs font-bold">Custom Blog Images</p>
-                    <p className="text-[11px] text-slate-500">Drop images here or choose files. New posts use these images instead of placeholders.</p>
+                    <p className="text-[11px] text-slate-500">Choose from the public library or upload images for new posts.</p>
                   </div>
                   <label className="shrink-0 cursor-pointer rounded-lg bg-sky-600 px-3 py-2 text-[11px] font-bold text-white hover:bg-sky-500">
-                    Choose images
+                    {isUploadingImages ? 'Uploading...' : 'Upload images'}
                     <input type="file" accept="image/*" multiple className="hidden" onChange={(event) => {
                       if (event.target.files) addCustomImages(event.target.files);
                       event.currentTarget.value = '';
@@ -1459,6 +1501,26 @@ export default function App() {
                       </div>
                     ))}
                   </div>
+                )}
+                {imageLibrary.length > 0 && (
+                  <>
+                    <p className="mt-4 text-[11px] font-bold text-slate-500">Public image library</p>
+                    <div className="mt-2 grid grid-cols-4 gap-2">
+                      {imageLibrary.map((src, index) => (
+                        <button
+                          key={`${src}-${index}`}
+                          type="button"
+                          onClick={() => {
+                            setCustomImages(current => current.includes(src) ? current : [...current, src]);
+                          }}
+                          className={`aspect-square overflow-hidden rounded-lg border-2 ${customImages.includes(src) ? 'border-emerald-500' : 'border-transparent'}`}
+                          title="Use this image for generated blogs"
+                        >
+                          <img src={src} alt={`Library image ${index + 1}`} className="h-full w-full object-cover" />
+                        </button>
+                      ))}
+                    </div>
+                  </>
                 )}
               </div>
 
