@@ -1,18 +1,19 @@
 import React, { useState } from 'react';
-import { Shield, Lock, ArrowRight, CheckCircle2, AlertCircle, Mail, Linkedin, Instagram } from 'lucide-react';
+import { ArrowRight, CheckCircle2, AlertCircle, Mail, Linkedin, Instagram } from 'lucide-react';
 
 interface LoginPageProps {
   onLoginSuccess: () => void;
   isDarkMode: boolean;
   onBackToPublic?: () => void;
+  otpOnly?: boolean;
 }
 
 const ADMIN_USER = '8081368879';
 const ADMIN_PASS = 'seo.8268';
 const ADMIN_OTP = '6307500844';
 
-export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, isDarkMode, onBackToPublic }) => {
-  const [step, setStep] = useState<1 | 2>(1);
+export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, isDarkMode, onBackToPublic, otpOnly = false }) => {
+  const [step, setStep] = useState<1 | 2>(otpOnly ? 2 : 1);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [otp, setOtp] = useState('');
@@ -60,9 +61,11 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, isDarkMode
 
           {/* Header */}
           <div className="text-center space-y-3 mb-6">
-            <div className="w-12 h-12 mx-auto rounded-xl bg-gradient-to-tr from-sky-500 to-blue-600 flex items-center justify-center text-white shadow-md shadow-sky-500/20">
-              <Shield className="w-6 h-6" />
-            </div>
+            <img
+              src={`${import.meta.env.VITE_SUPABASE_URL || ''}/storage/v1/object/public/DATA/Logo/Automation%20workflow%20logo.png`}
+              alt="Automated-Blogger"
+              className="w-20 h-20 mx-auto object-contain rounded-xl"
+            />
             <div>
               <div className="text-xs font-bold text-sky-600 dark:text-sky-400 uppercase tracking-wider">
                 Automated-Blogger
@@ -80,7 +83,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, isDarkMode
           )}
 
           {/* STEP 1: Username & Password */}
-          {step === 1 && (
+          {step === 1 && !otpOnly && (
             <form onSubmit={handleStep1Submit} className="space-y-4">
               <div>
                 <label className="block text-xs font-semibold text-slate-500 mb-1">Username</label>
@@ -145,13 +148,13 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, isDarkMode
                 <span>Verify OTP</span>
               </button>
 
-              <button
+              {!otpOnly && <button
                 type="button"
                 onClick={() => { setStep(1); setError(null); }}
                 className="w-full text-center text-xs text-slate-500 hover:underline pt-1"
               >
                 ← Back
-              </button>
+              </button>}
             </form>
           )}
 

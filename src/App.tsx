@@ -80,6 +80,7 @@ export default function App() {
   const [isSessionLocked, setIsSessionLocked] = useState<boolean>(false);
   const [isLoggingIn, setIsLoggingIn] = useState<boolean>(false);
   const [showPublicPage, setShowPublicPage] = useState<boolean>(false);
+  const [returnOtpRequired, setReturnOtpRequired] = useState(false);
   const lastActivityRef = useRef<number>(Date.now());
 
   // Theme state - Eye-friendly LIGHT THEME by default
@@ -158,6 +159,9 @@ export default function App() {
 
   const [isManageModalOpen, setIsManageModalOpen] = useState(false);
   const [airlineFilter, setAirlineFilter] = useState('');
+  const [customImages, setCustomImages] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem('easyflight_custom_images') || '[]'); } catch { return []; }
+  });
 
   // Queue & Review State (Hydrates compact storage or full draft)
   const [generatedPosts, setGeneratedPosts] = useState<GeneratedPost[]>(() => {
@@ -283,6 +287,11 @@ export default function App() {
     }
   }, [airlines]);
 
+  useEffect(() => {
+    try { localStorage.setItem('easyflight_custom_images', JSON.stringify(customImages)); }
+    catch (error) { console.warn('Could not save custom images locally:', error); }
+  }, [customImages]);
+
   // 10-Minute Inactivity Activity Tracker
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -342,7 +351,7 @@ export default function App() {
               office,
               targetKeyword,
               commonTfn,
-              undefined,
+              customImages[initialBatch.length % Math.max(customImages.length, 1)],
               socialLinks,
               currentTheme
             )
@@ -414,6 +423,17 @@ export default function App() {
 
   const selectedAirlines = airlines.filter((a: AirlineItem) => a.selected);
 
+  const addCustomImages = (files: FileList | File[]) => {
+    const imageFiles = Array.from(files).filter(file => file.type.startsWith('image/'));
+    imageFiles.forEach(file => {
+      const reader = new FileReader();
+      reader.onload = () => setCustomImages(current => [...current, String(reader.result)]);
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const removeCustomImage = (index: number) => setCustomImages(current => current.filter((_, i) => i !== index));
+
   // Bulk Post Generator
   const handleGenerateBulkPosts = () => {
     setIsGeneratingBulk(true);
@@ -431,7 +451,7 @@ export default function App() {
           office,
           targetKeyword,
           commonTfn,
-          undefined,
+          customImages[newQueue.length % Math.max(customImages.length, 1)],
           socialLinks,
           currentTheme
         );
@@ -469,11 +489,16 @@ export default function App() {
         post.country,
         post.keyword || targetKeyword,
         post.tfnNumber,
-        history
+        history,
+        `${Date.now()}-${index}-${post.airlineName}-${post.city}`
       );
 
       // 3. Generate Free AI Image with Pollinations
-      const aiImageUrl = generateFreeAiImageUrl(`${post.airlineName} airline office in ${post.city} travel photography`);
+      const aiImageUrl = customImages[index % Math.max(customImages.length, 1)] ||
+        generateFreeAiImageUrl(
+          `${post.keyword} ${post.airlineName} ${post.city} traveler support editorial photography`,
+          Date.now() + index
+        );
 
       // 4. Update the post sections
       const updatedSections: PostSections = {
@@ -551,7 +576,7 @@ export default function App() {
           office,
           targetKeyword,
           commonTfn,
-          undefined,
+          customImages[baseQueue.length % Math.max(customImages.length, 1)],
           socialLinks,
           currentTheme
         );
@@ -580,10 +605,15 @@ export default function App() {
           post.country,
           post.keyword || targetKeyword,
           post.tfnNumber,
-          history
+          history,
+          `${Date.now()}-${i}-${post.airlineName}-${post.city}`
         );
 
-        const aiImageUrl = generateFreeAiImageUrl(`${post.airlineName} airline office in ${post.city} travel photography`);
+        const aiImageUrl = customImages[i % Math.max(customImages.length, 1)] ||
+          generateFreeAiImageUrl(
+            `${post.keyword} ${post.airlineName} ${post.city} traveler support editorial photography`,
+            Date.now() + i
+          );
 
         const updatedSections: PostSections = {
           ...(post.sections || {
@@ -639,35 +669,39 @@ export default function App() {
     setTimeout(() => setStatusMessage(null), 5000);
   };
 
-  // Easy Non-Technical Section Update
+  const rebuildPost = (
+    post: GeneratedPost,
+    sections: PostSections,
+    imageUrl: string,
+    links: SocialLinks = post.socialLinks || socialLinks
+  ): GeneratedPost => ({
+    ...post,
+    sections,
+    imageUrl,
+    socialLinks: links,
+    htmlContent: buildHtmlFromSections(
+      post.title,
+      imageUrl,
+      post.tfnNumber,
+      post.airlineName,
+      post.officeName,
+      post.city,
+      post.country,
+      sections,
+      links,
+      post.bloggerSettings
+    )
+  });
+
+  // Easy Non-Technical Section Update. Shared edits are applied to every
+  // unpublished draft so the queue remains consistent before publishing.
   const handleUpdateSection = (field: keyof PostSections, value: any) => {
     if (!activePost || !activePost.sections) return;
-    const updatedSections: PostSections = {
-      ...activePost.sections,
-      [field]: value
-    };
-
-    const updatedHtml = buildHtmlFromSections(
-      activePost.title,
-      activePost.imageUrl,
-      activePost.tfnNumber,
-      activePost.airlineName,
-      activePost.officeName,
-      activePost.city,
-      activePost.country,
-      updatedSections,
-      activePost.socialLinks
-    );
-
-    const updatedPost: GeneratedPost = {
-      ...activePost,
-      sections: updatedSections,
-      htmlContent: updatedHtml
-    };
-
-    const newPosts = [...generatedPosts];
-    newPosts[currentPostIndex] = updatedPost;
-    setGeneratedPosts(newPosts);
+    setGeneratedPosts(posts => posts.map(post => rebuildPost(
+      post,
+      { ...(post.sections || activePost.sections!), [field]: value },
+      post.imageUrl
+    )));
   };
 
   const handleUpdateFaq = (index: number, question: string, answer: string) => {
@@ -713,35 +747,27 @@ export default function App() {
       faqs: []
     };
 
-    const updatedHtml = buildHtmlFromSections(
-      activePost.title,
-      newBanner,
-      activePost.tfnNumber,
-      activePost.airlineName,
-      activePost.officeName,
-      activePost.city,
-      activePost.country,
-      updatedSections,
-      activePost.socialLinks
-    );
-
-    const updatedPost = { ...activePost, imageUrl: newBanner, htmlContent: updatedHtml };
-    const newPosts = [...generatedPosts];
-    newPosts[currentPostIndex] = updatedPost;
-    setGeneratedPosts(newPosts);
+    setGeneratedPosts(posts => posts.map(post => rebuildPost(
+      post,
+      post.sections || updatedSections,
+      newBanner
+    )));
   };
 
   // Upload custom banner
   const handleCustomImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0 || !activePost) return;
     const file = e.target.files[0];
-    const localUrl = URL.createObjectURL(file);
-    const updatedHtml = activePost.htmlContent.replace(/<img[^>]*src="[^"]*"[^>]*>/, `<img src="${localUrl}" alt="${activePost.title}" style="max-width:100%;height:auto;border-radius:10px;margin:16px 0;box-shadow:0 6px 18px rgba(0,0,0,0.12);" />`);
-    
-    const updatedPost = { ...activePost, imageUrl: localUrl, htmlContent: updatedHtml };
-    const newPosts = [...generatedPosts];
-    newPosts[currentPostIndex] = updatedPost;
-    setGeneratedPosts(newPosts);
+    const reader = new FileReader();
+    reader.onload = () => {
+      const imageUrl = String(reader.result);
+      setGeneratedPosts(posts => posts.map(post => rebuildPost(
+        post,
+        post.sections || activePost.sections!,
+        imageUrl
+      )));
+    };
+    reader.readAsDataURL(file);
   };
 
   // Add custom link in modal
@@ -767,21 +793,12 @@ export default function App() {
   const handleSaveLinksAndApply = () => {
     setShowSocialModal(false);
     if (activePost && activePost.sections) {
-      const updatedHtml = buildHtmlFromSections(
-        activePost.title,
-        activePost.imageUrl,
-        activePost.tfnNumber,
-        activePost.airlineName,
-        activePost.officeName,
-        activePost.city,
-        activePost.country,
-        activePost.sections,
+      setGeneratedPosts(posts => posts.map(post => rebuildPost(
+        post,
+        post.sections || activePost.sections!,
+        post.imageUrl,
         socialLinks
-      );
-      const updated = { ...activePost, socialLinks, htmlContent: updatedHtml };
-      const newPosts = [...generatedPosts];
-      newPosts[currentPostIndex] = updated;
-      setGeneratedPosts(newPosts);
+      )));
     }
     setStatusMessage('Website, portals, and social links saved & embedded!');
     setTimeout(() => setStatusMessage(null), 3000);
@@ -1028,11 +1045,22 @@ export default function App() {
     );
   }
 
+  if (returnOtpRequired) {
+    return (
+      <LoginPage
+        otpOnly
+        isDarkMode={isDarkMode}
+        onLoginSuccess={() => { setReturnOtpRequired(false); setShowPublicPage(false); }}
+        onBackToPublic={() => setReturnOtpRequired(false)}
+      />
+    );
+  }
+
   // If user is authenticated but clicked to view the Public Site
   if (showPublicPage) {
     return (
       <PublicLandingPage 
-        onOpenDashboard={() => setShowPublicPage(false)}
+        onOpenDashboard={() => setReturnOtpRequired(true)}
         isDarkMode={isDarkMode}
         onToggleTheme={toggleTheme}
       />
@@ -1238,6 +1266,7 @@ export default function App() {
                   Reset Default (+1 888 794 3464)
                 </button>
               </div>
+
               <input
                 type="text"
                 value={commonTfn}
@@ -1399,6 +1428,38 @@ export default function App() {
                   <Sparkles className={`w-4 h-4 ${isGeneratingBulk && bulkProgress ? 'animate-spin' : ''}`} />
                   {isGeneratingBulk && bulkProgress ? 'DeepSeek Writing...' : '✨ Bulk AI Magic (DeepSeek)'}
                 </button>
+              </div>
+
+              <div
+                className={`rounded-xl border-2 border-dashed p-4 transition ${
+                  isDarkMode ? 'border-slate-700 bg-slate-950/60' : 'border-slate-300 bg-slate-50'
+                }`}
+                onDragOver={(event) => event.preventDefault()}
+                onDrop={(event) => { event.preventDefault(); addCustomImages(event.dataTransfer.files); }}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-bold">Custom Blog Images</p>
+                    <p className="text-[11px] text-slate-500">Drop images here or choose files. New posts use these images instead of placeholders.</p>
+                  </div>
+                  <label className="shrink-0 cursor-pointer rounded-lg bg-sky-600 px-3 py-2 text-[11px] font-bold text-white hover:bg-sky-500">
+                    Choose images
+                    <input type="file" accept="image/*" multiple className="hidden" onChange={(event) => {
+                      if (event.target.files) addCustomImages(event.target.files);
+                      event.currentTarget.value = '';
+                    }} />
+                  </label>
+                </div>
+                {customImages.length > 0 && (
+                  <div className="mt-3 grid grid-cols-4 gap-2">
+                    {customImages.map((src, index) => (
+                      <div key={`${src.slice(0, 20)}-${index}`} className="group relative aspect-square overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700">
+                        <img src={src} alt={`Custom blog image ${index + 1}`} className="h-full w-full object-cover" />
+                        <button type="button" onClick={() => removeCustomImage(index)} className="absolute right-1 top-1 rounded-full bg-slate-950/75 px-1.5 text-xs text-white opacity-0 group-hover:opacity-100" aria-label="Remove image">×</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
             </div>

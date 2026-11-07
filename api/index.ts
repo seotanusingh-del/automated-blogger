@@ -122,7 +122,7 @@ app.get(['/api/status', '/status'], async (req, res) => {
 // Server-side AI Generation using DEEPSEEK_API_KEY from environment variables
 app.post(['/api/ai/generate', '/ai/generate'], async (req, res) => {
   try {
-    const { airlineName, city, country, keyword, tfn, recentPosts, apiKey } = req.body;
+    const { airlineName, city, country, keyword, tfn, recentPosts, apiKey, variationSeed } = req.body;
     const resolvedApiKey = (apiKey && String(apiKey).trim()) || process.env.DEEPSEEK_API_KEY || '';
 
     if (!resolvedApiKey) {
@@ -149,12 +149,14 @@ Never use repetitive corporate buzzwords or copy-pasted formulas. Write with hig
     const userPrompt = `Write a comprehensive, engaging, and original SEO guide for the "${airlineName} Office in ${city}, ${country}".
 Target Keyword: ${keyword}
 Toll-Free Helpline to naturally embed: ${tfn}
+Unique research brief: Treat "${keyword}" as the primary search intent. Use keyword-specific questions, entities, terminology, and traveler scenarios rather than a generic airline office template.
+Variation seed: ${variationSeed || `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`}
 
 ${recentPosts && recentPosts.length > 0 ? `Previously published titles in this topic cluster: [${previousTitles}]. 
 CRITICAL: Do NOT reuse phrasing, structures, or angles from previous posts. Make this article stand out with a fresh perspective, unique traveler scenarios, and localized context for ${city}.` : ''}
 
 Requirements:
-1. High-CTR SEO Title (incorporate airline name, city, primary keyword, and clear value proposition).
+1. High-CTR SEO Title (incorporate airline name, city, primary keyword, and clear value proposition). Use a fresh title pattern that differs from previous titles.
 2. Engaging, In-Depth Overview (2-3 detailed paragraphs covering the city's importance to ${airlineName} passengers, airport/terminal access, booking changes, missed connections, and dispute escalations).
 3. 6-8 Specific Airline Services (e.g. ticket reissue, baggage claim tracking, seat upgrades, infant/pet policies, DOT compensation claims, wheelchair assistance).
 4. 5 Thorough, Unique FAQs with realistic answers that seamlessly embed the toll-free assistance number (${tfn}).

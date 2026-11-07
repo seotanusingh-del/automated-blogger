@@ -1,1 +1,23 @@
 @import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+html, body, #root {
+  min-height: 100%;
+}
+
+body {
+  color: #0f172a;
+  background: #f8fafc;
+}
+
+.dark body {
+  color: #f8fafc;
+  background: #020617;
+}
+
+.dark input,
+.dark textarea,
+.dark select {
+  color: #f8fafc;
+}

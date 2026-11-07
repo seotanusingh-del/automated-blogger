@@ -370,8 +370,9 @@ ${JSON.stringify(schemaJson, null, 2)}
 <link rel="canonical" href="${canonicalUrl}" />
 ${schemaHtml}
 
-<h2>${escapeXml(title)}</h2>
+<h1>${escapeXml(title)}</h1>
 <img src="${bannerImg}" alt="${escapeXml(airlineName)} ${escapeXml(officeTitle)} Customer Support and Flight Desk" style="max-width:100%;height:auto;border-radius:10px;margin:16px 0;box-shadow:0 6px 18px rgba(0,0,0,0.12);" />
+<p style="font-size:16px;line-height:1.75;">Facing a problem with an ${escapeXml(airlineName)} booking, flight schedule, baggage, payment, or customer service? Understanding the dispute process can help passengers explain their concerns and request a fair review. Whether the issue involves a reservation, a flight disruption, or a service concern, keeping accurate travel records is an important first step.${escapeXml(cleanTfn)}</p>
 
 <!-- Table of Contents / Anchor Redirects -->
 <div style="background:#f1f5f9;border-left:4px solid #0284c7;padding:14px 18px;border-radius:6px;margin:20px 0;font-size:14px;">
