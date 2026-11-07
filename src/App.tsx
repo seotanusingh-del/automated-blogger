@@ -68,7 +68,12 @@ import {
   generateFreeAiImageUrl, 
   BlogPostContent, 
   getDeepSeekApiKey, 
-  setDeepSeekApiKey 
+  setDeepSeekApiKey,
+  getAiProvider,
+  setAiProvider,
+  getGeminiApiKey,
+  setGeminiApiKey,
+  AiProvider
 } from './services/deepseek';
 import {
   getRecentPosts,
@@ -97,6 +102,8 @@ export default function App() {
   const [isBackendConnected, setIsBackendConnected] = useState<boolean>(false);
   const [publishSecret, setPublishSecret] = useState<string>(() => localStorage.getItem('easyflight_publish_secret') || '');
   const [deepSeekKey, setDeepSeekKey] = useState<string>(() => getDeepSeekApiKey());
+  const [aiProvider, setProvider] = useState<AiProvider>(() => getAiProvider());
+  const [geminiKey, setGeminiKey] = useState<string>(() => getGeminiApiKey());
   const [customRefreshToken, setCustomRefreshToken] = useState<string>(() => localStorage.getItem('easyflight_google_refresh_token') || '');
   const [showRefreshTokenModal, setShowRefreshTokenModal] = useState<boolean>(false);
 
@@ -510,7 +517,8 @@ export default function App() {
         post.keyword || targetKeyword,
         post.tfnNumber,
         history,
-        `${Date.now()}-${index}-${post.airlineName}-${post.city}`
+        `${Date.now()}-${index}-${post.airlineName}-${post.city}`,
+        aiProvider
       );
 
       // 3. Generate Free AI Image with Pollinations
@@ -626,7 +634,8 @@ export default function App() {
           post.keyword || targetKeyword,
           post.tfnNumber,
           history,
-          `${Date.now()}-${i}-${post.airlineName}-${post.city}`
+          `${Date.now()}-${i}-${post.airlineName}-${post.city}`,
+          aiProvider
         );
 
         const aiImageUrl = customImages[i % Math.max(customImages.length, 1)] ||
@@ -1208,29 +1217,29 @@ export default function App() {
             <span className="font-semibold">{publishSecret ? 'Secret Set' : 'Publish: Auto-Auth'}</span>
           </button>
 
-          {/* DeepSeek Key Config Button */}
+          {/* AI Provider Config Button */}
           <button
             onClick={() => {
-              const key = prompt(
-                'Enter DeepSeek API Key (sk-...) to save locally in your browser.\n\nTip: You can also set DEEPSEEK_API_KEY in your Vercel Environment Variables so you never have to paste it here!',
-                deepSeekKey
-              );
+              const provider = (prompt('Choose AI provider: deepseek or gemini', aiProvider) || aiProvider).toLowerCase() === 'gemini' ? 'gemini' : 'deepseek';
+              const key = prompt(provider === 'gemini' ? 'Enter Gemini API key (stored only in this browser)' : 'Enter DeepSeek API key (stored only in this browser)', provider === 'gemini' ? geminiKey : deepSeekKey);
               if (key !== null) {
-                setDeepSeekApiKey(key.trim());
-                setDeepSeekKey(key.trim());
-                setStatusMessage(key.trim() ? 'DeepSeek API Key updated!' : 'DeepSeek API Key cleared (will use server env).');
+                if (provider === 'gemini') { setGeminiApiKey(key); setGeminiKey(key); }
+                else { setDeepSeekApiKey(key); setDeepSeekKey(key); }
+                setAiProvider(provider);
+                setProvider(provider);
+                setStatusMessage(`${provider} provider selected. Keys are not stored in Supabase.`);
                 setTimeout(() => setStatusMessage(null), 3000);
               }
             }}
             className={`p-2 rounded-lg border text-xs flex items-center gap-1.5 transition ${
-              deepSeekKey
+              aiProvider === 'gemini' ? geminiKey : deepSeekKey
                 ? (isDarkMode ? 'bg-sky-950/20 border-sky-800 text-sky-400' : 'bg-sky-50 border-sky-200 text-sky-600')
                 : (isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-white border-slate-300 text-slate-700')
             }`}
-            title="Configure DeepSeek API Key (or set DEEPSEEK_API_KEY in Vercel)"
+            title="Configure DeepSeek or Gemini API key"
           >
             <Sparkles className="w-3.5 h-3.5" />
-            <span className="font-semibold">{deepSeekKey ? 'AI Key Set' : 'Set AI Key'}</span>
+            <span className="font-semibold">{(aiProvider === 'gemini' ? geminiKey : deepSeekKey) ? `${aiProvider} ready` : 'Set AI Key'}</span>
           </button>
 
           {/* Light / Dark Mode Toggle Button */}

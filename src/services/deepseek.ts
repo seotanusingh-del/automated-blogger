@@ -5,6 +5,25 @@ export interface BlogPostContent {
   faqs: { question: string; answer: string }[];
 }
 
+export type AiProvider = 'deepseek' | 'gemini';
+
+export function getAiProvider(): AiProvider {
+  return localStorage.getItem('easyflight_ai_provider') === 'gemini' ? 'gemini' : 'deepseek';
+}
+
+export function setAiProvider(provider: AiProvider) {
+  localStorage.setItem('easyflight_ai_provider', provider);
+}
+
+export function getGeminiApiKey(): string {
+  return localStorage.getItem('easyflight_gemini_key') || '';
+}
+
+export function setGeminiApiKey(key: string) {
+  if (key.trim()) localStorage.setItem('easyflight_gemini_key', key.trim());
+  else localStorage.removeItem('easyflight_gemini_key');
+}
+
 function buildKeywordFallback(airlineName: string, city: string, keyword: string, tfn: string): BlogPostContent {
   const topic = keyword.trim() || `${airlineName} missed flight policy`;
   const cleanTfn = tfn.trim() || '+1-888-794-3464';
@@ -58,7 +77,8 @@ export async function generateDeepSeekContent(
   keyword: string,
   tfn: string,
   recentPosts: any[] = [],
-  variationSeed = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  variationSeed = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+  provider: AiProvider = getAiProvider()
 ): Promise<BlogPostContent> {
   const previousTitles = recentPosts.map(p => p.title).join(', ');
   const requestVariationSeed = variationSeed || `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -92,6 +112,40 @@ Return valid JSON with this exact structure:
   "faqs": [{"question": "...", "answer": "..."}]
 }`;
 
+  const cachedKey = `easyflight_ai_cache:${provider}:${airlineName}:${city}:${keyword}`;
+  const cached = localStorage.getItem(cachedKey);
+  if (cached) {
+    try { return JSON.parse(cached) as BlogPostContent; } catch { localStorage.removeItem(cachedKey); }
+  }
+
+  if (provider === 'gemini') {
+    const geminiKey = getGeminiApiKey();
+    if (!geminiKey) return buildKeywordFallback(airlineName, city, keyword, tfn);
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${encodeURIComponent(geminiKey)}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          generationConfig: { temperature: 0.75, responseMimeType: 'application/json', maxOutputTokens: 1800 },
+          contents: [{ parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }] }]
+        })
+      }
+    );
+    const data = await response.json().catch(() => ({}));
+    if (response.ok) {
+      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      try {
+        const parsed = JSON.parse(text);
+        if (parsed?.title && parsed?.overview && Array.isArray(parsed.services) && Array.isArray(parsed.faqs)) {
+          localStorage.setItem(cachedKey, JSON.stringify(parsed));
+          return parsed as BlogPostContent;
+        }
+      } catch { /* use the deterministic fallback below */ }
+    }
+    return buildKeywordFallback(airlineName, city, keyword, tfn);
+  }
+
   // 1. Try calling the backend API proxy first (which uses DEEPSEEK_API_KEY from Vercel / server env)
   try {
     const customKey = getDeepSeekApiKey();
@@ -120,6 +174,7 @@ Return valid JSON with this exact structure:
         Array.isArray(data.data.services) &&
         Array.isArray(data.data.faqs)
       ) {
+        localStorage.setItem(cachedKey, JSON.stringify(data.data));
         return data.data as BlogPostContent;
       }
       throw new Error('AI service returned incomplete blog content.');

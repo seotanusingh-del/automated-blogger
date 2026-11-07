@@ -12,9 +12,9 @@ const publicStorageUrl = `${storageUrl}/storage/v1/object/public/${storageBucket
 
 app.get(['/api/storage/images', '/storage/images'], async (req, res) => {
   const prefix = String(req.query.prefix || '');
-  const serviceKey = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const serviceKey = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
   if (!serviceKey) {
-    return res.status(503).json({ error: 'Supabase service storage is not configured.' });
+    return res.status(503).json({ error: 'Set SUPABASE_SERVICE_KEY or SUPABASE_ANON_KEY in Vercel to load the public DATA image library.' });
   }
   try {
     const response = await fetch(`${storageUrl}/storage/v1/object/list/${storageBucket}`, {
