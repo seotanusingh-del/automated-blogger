@@ -132,6 +132,16 @@ export default function App() {
     }
     return 'Office Location, Contact Number & Flight Reservations';
   });
+  const [companyName, setCompanyName] = useState<string>(() => {
+    try { return JSON.parse(localStorage.getItem('easyflight_session_draft') || '{}').companyName || ''; } catch { return ''; }
+  });
+  const [companyLogoUrl, setCompanyLogoUrl] = useState<string>(() => {
+    try { return JSON.parse(localStorage.getItem('easyflight_session_draft') || '{}').companyLogoUrl || ''; } catch { return ''; }
+  });
+  const [activeSection, setActiveSection] = useState<'setup' | 'airlines' | 'drafts' | 'review' | 'history'>('setup');
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [historyFilter, setHistoryFilter] = useState('');
+  const [selectedHistoryIds, setSelectedHistoryIds] = useState<string[]>([]);
 
   const [isWebGroundingEnabled, setIsWebGroundingEnabled] = useState(true);
 
@@ -241,6 +251,27 @@ export default function App() {
   const [bulkProgress, setBulkProgress] = useState<{ current: number; total: number; currentTitle?: string } | null>(null);
 
   const activePost = generatedPosts[currentPostIndex] || null;
+  const filteredHistoryPosts = generatedPosts.filter(post => {
+    const query = historyFilter.trim().toLowerCase();
+    return !query || [post.title, post.keyword, post.airlineName, post.status, post.publishedUrl || ''].some(value => value.toLowerCase().includes(query));
+  });
+  const copyHistoryLinks = () => {
+    const selected = filteredHistoryPosts.filter(post => selectedHistoryIds.includes(post.id));
+    const posts = selected.length ? selected : filteredHistoryPosts;
+    void navigator.clipboard.writeText(posts.map(post => post.publishedUrl || post.title).join('\n'));
+    setStatusMessage(`${posts.length} history items copied.`);
+  };
+  const exportHistory = () => {
+    const selected = filteredHistoryPosts.filter(post => selectedHistoryIds.includes(post.id));
+    const posts = selected.length ? selected : filteredHistoryPosts;
+    const csv = ['Title,Keyword,Airline,Status,Published URL', ...posts.map(post => [post.title, post.keyword, post.airlineName, post.status, post.publishedUrl || ''].map(value => `"${value.replace(/"/g, '""')}"`).join(','))].join('\n');
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'blog-history.csv';
+    link.click();
+    URL.revokeObjectURL(url);
+  };
 
   // Safely persist session work to localStorage without exceeding quota
   useEffect(() => {
@@ -272,6 +303,8 @@ export default function App() {
         blogId,
         commonTfn,
         targetKeyword,
+        companyName,
+        companyLogoUrl,
         socialLinks,
         currentPostIndex,
         generatedPosts: compactPosts
@@ -292,7 +325,7 @@ export default function App() {
         console.error('Failed to write to localStorage:', innerErr);
       }
     }
-  }, [blogId, commonTfn, targetKeyword, socialLinks, currentPostIndex, generatedPosts]);
+  }, [blogId, commonTfn, targetKeyword, companyName, companyLogoUrl, socialLinks, currentPostIndex, generatedPosts]);
 
   // Safely persist airlines to localStorage
   useEffect(() => {
@@ -379,7 +412,9 @@ export default function App() {
               commonTfn,
               customImages[initialBatch.length % Math.max(customImages.length, 1)],
               socialLinks,
-              currentTheme
+              currentTheme,
+              companyName,
+              companyLogoUrl
             )
           );
         });
@@ -402,7 +437,9 @@ export default function App() {
         activePost.officeName, 
         activePost.city, 
         activePost.tfnNumber, 
-        next ? 'dark' : 'light'
+        next ? 'dark' : 'light',
+        companyName,
+        companyLogoUrl
       );
       const updatedSections = activePost.sections || {
         urgentCalloutTitle: '24/7 Priority Travel Assistance & Booking Desk',
@@ -454,7 +491,20 @@ export default function App() {
     if (!imageFiles.length) return;
     setIsUploadingImages(true);
     try {
-      const uploaded = await Promise.all(imageFiles.map(file => uploadImageToPublicBucket(file, file.name)));
+      const uploaded = await Promise.all(imageFiles.map(async file => {
+        try {
+          return await uploadImageToPublicBucket(file, file.name);
+        } catch (error) {
+          const localUrl = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => typeof reader.result === 'string' ? resolve(reader.result) : reject(new Error('Could not preview image.'));
+            reader.onerror = () => reject(error);
+            reader.readAsDataURL(file);
+          });
+          setStatusMessage('Storage upload failed; using a local preview. Configure Supabase storage before publishing.');
+          return localUrl;
+        }
+      }));
       setCustomImages(current => [...current, ...uploaded]);
       setImageLibrary(current => [...current, ...uploaded]);
     } catch (error) {
@@ -463,6 +513,14 @@ export default function App() {
     } finally {
       setIsUploadingImages(false);
     }
+  };
+
+  const handleCompanyLogoUpload = (file?: File) => {
+    if (!file || !file.type.startsWith('image/')) return;
+    const reader = new FileReader();
+    reader.onload = () => setCompanyLogoUrl(typeof reader.result === 'string' ? reader.result : '');
+    reader.onerror = () => setStatusMessage('Company logo could not be read.');
+    reader.readAsDataURL(file);
   };
 
   const removeCustomImage = (index: number) => setCustomImages(current => current.filter((_, i) => i !== index));
@@ -500,7 +558,7 @@ export default function App() {
       city: 'Headquarters',
       country: 'United States'
     };
-    const draft = generateOfficeBlogPost(selectedAirlines[0], office, targetKeyword, commonTfn, customImages[0], socialLinks, isDarkMode ? 'dark' : 'light');
+    const draft = generateOfficeBlogPost(selectedAirlines[0], office, targetKeyword, commonTfn, customImages[0], socialLinks, isDarkMode ? 'dark' : 'light', companyName, companyLogoUrl);
     draft.status = 'Draft';
     setGeneratedPosts(current => [...current, draft]);
     setCurrentPostIndex(generatedPosts.length);
@@ -526,7 +584,9 @@ export default function App() {
           commonTfn,
           customImages[newQueue.length % Math.max(customImages.length, 1)],
           socialLinks,
-          currentTheme
+          currentTheme,
+          companyName,
+          companyLogoUrl
         );
         newQueue.push(post);
       });
@@ -560,7 +620,7 @@ export default function App() {
         post.airlineName,
         post.city,
         post.country,
-        post.keyword || targetKeyword,
+        targetKeyword.trim() || post.keyword,
         post.tfnNumber,
         history,
         `${Date.now()}-${index}-${post.airlineName}-${post.city}`,
@@ -648,7 +708,9 @@ export default function App() {
           commonTfn,
           customImages[baseQueue.length % Math.max(customImages.length, 1)],
           socialLinks,
-          currentTheme
+          currentTheme,
+          companyName,
+          companyLogoUrl
         );
         baseQueue.push(post);
       });
@@ -673,7 +735,7 @@ export default function App() {
           post.airlineName,
           post.city,
           post.country,
-          post.keyword || targetKeyword,
+          targetKeyword.trim() || post.keyword,
           post.tfnNumber,
           history,
           `${Date.now()}-${i}-${post.airlineName}-${post.city}`,
@@ -813,7 +875,9 @@ export default function App() {
       activePost.officeName, 
       activePost.city, 
       activePost.tfnNumber,
-      isDarkMode ? 'dark' : 'light'
+      isDarkMode ? 'dark' : 'light',
+      companyName,
+      companyLogoUrl
     );
     const updatedSections = activePost.sections || {
       urgentCalloutTitle: '24/7 Priority Travel Assistance & Booking Desk',
@@ -833,6 +897,29 @@ export default function App() {
     )));
   };
 
+  const applyBrandingToPosts = () => {
+    setGeneratedPosts(posts => posts.map(post => {
+      const banner = post.imageUrl.startsWith('data:image/svg')
+        ? generateOfficeBannerSvg(post.airlineName, post.officeName, post.city, post.tfnNumber, isDarkMode ? 'dark' : 'light', companyName, companyLogoUrl)
+        : post.imageUrl;
+      return {
+        ...rebuildPost(post, post.sections || {
+          urgentCalloutTitle: '24/7 Priority Travel Assistance & Booking Desk',
+          urgentCalloutDesc: 'Need immediate booking assistance?',
+          overviewPara1: '',
+          overviewPara2: '',
+          officeHours: '24/7',
+          officeAddress: post.officeName,
+          servicesList: [],
+          faqs: []
+        }, banner),
+        companyName,
+        companyLogoUrl
+      };
+    }));
+    setStatusMessage('Company branding applied to the current blog queue.');
+  };
+
   // Upload custom banner
   const handleCustomImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0 || !activePost) return;
@@ -847,7 +934,14 @@ export default function App() {
       )));
     }).catch(error => {
       console.error('Image upload failed:', error);
-      setStatusMessage(error instanceof Error ? error.message : 'Image upload failed.');
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (typeof reader.result !== 'string') return;
+        setCustomImages(current => [...current, reader.result as string]);
+        setGeneratedPosts(posts => posts.map(post => rebuildPost(post, post.sections || activePost.sections!, reader.result as string)));
+        setStatusMessage('Storage upload failed; showing a local preview until storage is configured.');
+      };
+      reader.readAsDataURL(file);
     });
   };
 
@@ -1165,7 +1259,10 @@ export default function App() {
       <header className={`border-b sticky top-0 z-40 px-6 py-2.5 flex items-center justify-between transition-colors ${
         isDarkMode ? 'bg-slate-900/95 border-slate-800' : 'bg-white/95 border-slate-200 shadow-sm'
       }`}>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
+          <button type="button" onClick={() => setIsSidebarOpen(true)} className="rounded-lg border p-2 lg:hidden" aria-label="Open navigation">
+            <Settings className="h-4 w-4" />
+          </button>
           <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-sky-500 to-blue-600 flex items-center justify-center text-white shadow font-bold">
             <Plane className="w-4 h-4 text-white" />
           </div>
@@ -1183,6 +1280,7 @@ export default function App() {
           {/* Public Landing Page & Policies Button */}
           <button
             onClick={() => setShowPublicPage(true)}
+            hidden
             className={`px-2.5 py-1.5 rounded-lg border text-xs flex items-center gap-1.5 transition ${
               isDarkMode 
                 ? 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-sky-400' 
@@ -1197,6 +1295,7 @@ export default function App() {
           {/* Connection Status Badge (Clickable to inspect/update token) */}
           <button
             onClick={() => setShowRefreshTokenModal(true)}
+            hidden
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold transition cursor-pointer ${
             isBackendConnected
               ? isDarkMode
@@ -1216,6 +1315,7 @@ export default function App() {
           {/* Google Refresh Token Button */}
           <button
             onClick={() => setShowRefreshTokenModal(true)}
+            hidden
             className={`p-2 rounded-lg border text-xs flex items-center gap-1.5 transition ${
               (isBackendConnected || customRefreshToken)
                 ? (isDarkMode ? 'bg-amber-950/20 border-amber-800 text-amber-400' : 'bg-amber-50 border-amber-200 text-amber-600')
@@ -1257,6 +1357,7 @@ export default function App() {
                 setTimeout(() => setStatusMessage(null), 3000);
               }
             }}
+            hidden
             className={`p-2 rounded-lg border text-xs flex items-center gap-1.5 transition ${
               publishSecret
                 ? (isDarkMode ? 'bg-emerald-950/20 border-emerald-800 text-emerald-400' : 'bg-emerald-50 border-emerald-200 text-emerald-600')
@@ -1283,6 +1384,7 @@ export default function App() {
                 setTimeout(() => setStatusMessage(null), 3000);
               }
             }}
+            hidden
             className={`p-2 rounded-lg border text-xs flex items-center gap-1.5 transition ${
               aiProvider === 'gemini' ? geminiKey : deepSeekKey
                 ? (isDarkMode ? 'bg-sky-950/20 border-sky-800 text-sky-400' : 'bg-sky-50 border-sky-200 text-sky-600')
@@ -1311,6 +1413,7 @@ export default function App() {
           {/* Website & Social Links Button */}
           <button
             onClick={() => setShowSocialModal(true)}
+            hidden
             className={`px-3 py-1.5 rounded-lg border text-xs font-semibold flex items-center gap-1.5 transition ${
               isDarkMode 
                 ? 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-sky-400' 
@@ -1347,20 +1450,40 @@ export default function App() {
       )}
 
       {/* Settings and related tools remain available without crowding the header. */}
-      <aside className={`hidden lg:block fixed left-0 top-[57px] bottom-0 z-30 w-52 border-r p-4 ${
+      {isSidebarOpen && <button type="button" aria-label="Close navigation" onClick={() => setIsSidebarOpen(false)} className="fixed inset-0 z-40 bg-slate-950/40 lg:hidden" />}
+      <aside className={`${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} fixed left-0 top-0 bottom-0 z-50 w-72 border-r p-4 transition-transform lg:top-[57px] lg:w-52 lg:translate-x-0 ${
         isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
       }`}>
-        <p className="mb-3 px-2 text-[10px] font-black uppercase tracking-wider text-slate-500">Workspace</p>
+        <div className="mb-5 flex items-center justify-between lg:hidden"><span className="text-sm font-black">Navigation</span><button type="button" onClick={() => setIsSidebarOpen(false)}><ChevronLeft className="h-4 w-4" /></button></div>
+        <p className="mb-3 px-2 text-[10px] font-black uppercase tracking-wider text-slate-500">Workflow</p>
         <nav className="space-y-1 text-xs font-semibold">
-      <a href="#workspace-controls" className="block rounded-lg px-3 py-2 hover:bg-sky-500/10 hover:text-sky-500">Blog setup</a>
-      <a href="#review-queue" className="block rounded-lg px-3 py-2 hover:bg-sky-500/10 hover:text-sky-500">Review queue</a>
-      <a href="#templates" className="block rounded-lg px-3 py-2 hover:bg-sky-500/10 hover:text-sky-500">Draft templates</a>
+          {([
+            ['setup', '1. Setup & branding'],
+            ['airlines', '2. Airlines'],
+            ['drafts', '3. Drafts & templates'],
+            ['review', '4. Review & publish'],
+            ['history', '5. History & export']
+          ] as const).map(([section, label]) => (
+            <button key={section} type="button" onClick={() => { setActiveSection(section); setIsSidebarOpen(false); }} className={`block w-full rounded-lg px-3 py-2 text-left ${activeSection === section ? 'bg-sky-600 text-white' : 'hover:bg-sky-500/10 hover:text-sky-500'}`}>{label}</button>
+          ))}
         </nav>
         <p className="mb-3 mt-7 px-2 text-[10px] font-black uppercase tracking-wider text-slate-500">Settings</p>
         <nav className="space-y-1 text-xs font-semibold">
-      <button onClick={() => setShowRefreshTokenModal(true)} className="block w-full rounded-lg px-3 py-2 text-left hover:bg-sky-500/10 hover:text-sky-500">Google connection</button>
-      <button onClick={() => document.getElementById('ai-settings')?.scrollIntoView({ behavior: 'smooth' })} className="block w-full rounded-lg px-3 py-2 text-left hover:bg-sky-500/10 hover:text-sky-500">AI provider</button>
-      <a href="https://seo-indexer-tool.vercel.app/" target="_blank" rel="noopener noreferrer" className="block rounded-lg px-3 py-2 hover:bg-sky-500/10 hover:text-sky-500">Blogger Indexer <ExternalLink className="ml-1 inline h-3 w-3" /></a>
+          <button onClick={() => setShowRefreshTokenModal(true)} className="block w-full rounded-lg px-3 py-2 text-left hover:bg-sky-500/10 hover:text-sky-500">Google connection</button>
+          <button onClick={() => {
+            const provider = (prompt('Choose AI provider: deepseek or gemini', aiProvider) || aiProvider).toLowerCase() === 'gemini' ? 'gemini' : 'deepseek';
+            const key = prompt(provider === 'gemini' ? 'Enter Gemini API key' : 'Enter DeepSeek API key', provider === 'gemini' ? geminiKey : deepSeekKey);
+            if (key !== null) {
+              if (provider === 'gemini') { setGeminiApiKey(key); setGeminiKey(key); } else { setDeepSeekApiKey(key); setDeepSeekKey(key); }
+              setAiProvider(provider); setProvider(provider);
+            }
+          }} className="block w-full rounded-lg px-3 py-2 text-left hover:bg-sky-500/10 hover:text-sky-500">AI provider</button>
+          <button onClick={() => {
+            const secret = prompt('Optional publish secret', publishSecret);
+            if (secret !== null) { setPublishSecret(secret.trim()); secret.trim() ? localStorage.setItem('easyflight_publish_secret', secret.trim()) : localStorage.removeItem('easyflight_publish_secret'); }
+          }} className="block w-full rounded-lg px-3 py-2 text-left hover:bg-sky-500/10 hover:text-sky-500">Publishing security</button>
+          <button onClick={() => setShowSocialModal(true)} className="block w-full rounded-lg px-3 py-2 text-left hover:bg-sky-500/10 hover:text-sky-500">Website & social links</button>
+          <a href="https://seo-indexer-tool.vercel.app/" target="_blank" rel="noopener noreferrer" className="block rounded-lg px-3 py-2 hover:bg-sky-500/10 hover:text-sky-500">Blogger Indexer <ExternalLink className="ml-1 inline h-3 w-3" /></a>
         </nav>
       </aside>
 
@@ -1373,8 +1496,29 @@ export default function App() {
             isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
           }`}>
             
+            <div className={`${activeSection === 'setup' ? '' : 'hidden'} rounded-xl border border-sky-500/20 bg-sky-500/5 p-3`}>
+              <p className="text-xs font-black">Brand details</p>
+              <p className="mt-1 text-[11px] text-slate-500">These appear on every generated article and banner.</p>
+              <input
+                type="text"
+                value={companyName}
+                onChange={(event) => setCompanyName(event.target.value)}
+                placeholder="Agency or company name"
+                className={`mt-3 w-full rounded-lg border p-2.5 text-xs outline-none ${isDarkMode ? 'border-slate-800 bg-slate-950 text-white' : 'border-slate-300 bg-white text-slate-900'}`}
+              />
+              <div className="mt-2 flex items-center gap-3">
+                {companyLogoUrl && <img src={companyLogoUrl} alt="Company logo preview" className="h-10 w-10 rounded-lg border border-slate-300 object-contain dark:border-slate-700" />}
+                <label className="cursor-pointer rounded-lg border border-slate-300 px-3 py-2 text-[11px] font-semibold dark:border-slate-700">
+                  Add small banner logo
+                  <input type="file" accept="image/*" className="hidden" onChange={(event) => handleCompanyLogoUpload(event.target.files?.[0])} />
+                </label>
+                {companyLogoUrl && <button type="button" onClick={() => setCompanyLogoUrl('')} className="text-[11px] font-semibold text-rose-500">Remove</button>}
+              </div>
+              <button type="button" onClick={applyBrandingToPosts} className="mt-3 rounded-lg bg-sky-600 px-3 py-2 text-[11px] font-bold text-white hover:bg-sky-500">Apply branding to blog queue</button>
+            </div>
+
             {/* Common TFN Number Input */}
-            <div>
+            <div className={activeSection === 'setup' ? '' : 'hidden'}>
               <div className="flex items-center justify-between text-xs mb-1">
                 <label className="font-bold">
                   Common Toll-Free Number (TFN)
@@ -1404,7 +1548,7 @@ export default function App() {
             </div>
 
             {/* Keyword / Topic Input with Web Grounding */}
-            <div>
+            <div className={activeSection === 'setup' ? '' : 'hidden'}>
               <div className="flex items-center justify-between text-xs mb-1">
                 <label className="font-bold">Target Keyword / Topic</label>
                 <label className="flex items-center gap-1 cursor-pointer text-[11px] text-sky-600 dark:text-sky-400 font-semibold">
@@ -1432,7 +1576,7 @@ export default function App() {
             </div>
 
             {/* Target Blogger ID Input */}
-            <div>
+            <div className={activeSection === 'setup' ? '' : 'hidden'}>
               <label className="block text-xs font-bold mb-1">Target Blogger Blog ID</label>
               <div className="flex items-center gap-2">
                 <input
@@ -1456,7 +1600,7 @@ export default function App() {
             </div>
 
             {/* Airline Selector Header */}
-            <div className={`pt-3 border-t space-y-3 ${isDarkMode ? 'border-slate-800' : 'border-slate-200'}`}>
+            <div className={`${activeSection === 'airlines' ? '' : 'hidden'} pt-3 border-t space-y-3 ${isDarkMode ? 'border-slate-800' : 'border-slate-200'}`}>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <span className="text-xs font-bold">Select Airlines</span>
@@ -1551,7 +1695,7 @@ export default function App() {
               </div>
 
               <div
-                className={`rounded-xl border-2 border-dashed p-4 transition ${
+                className={`${activeSection === 'setup' ? '' : 'hidden'} rounded-xl border-2 border-dashed p-4 transition ${
                   isDarkMode ? 'border-slate-700 bg-slate-950/60' : 'border-slate-300 bg-slate-50'
                 }`}
                 onDragOver={(event) => event.preventDefault()}
@@ -1618,7 +1762,7 @@ export default function App() {
                 </button>
               </div>
 
-              <div className={`rounded-xl border p-4 ${isDarkMode ? 'border-slate-800 bg-slate-950/60' : 'border-slate-200 bg-slate-50'}`}>
+              <div id="templates" className={`${activeSection === 'drafts' ? '' : 'hidden'} rounded-xl border p-4 ${isDarkMode ? 'border-slate-800 bg-slate-950/60' : 'border-slate-200 bg-slate-50'}`}>
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
                     <p className="text-xs font-bold">Draft &amp; Template Manager</p>
@@ -1648,8 +1792,30 @@ export default function App() {
           </div>
         </div>
 
+        <section className={`${activeSection === 'history' ? '' : 'hidden'} lg:col-span-7 rounded-2xl border p-5 shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div><h2 className="text-lg font-black">Logs, status & history</h2><p className="text-xs text-slate-500">Filter, select, copy links, or export your workflow records.</p></div>
+            <div className="flex gap-2">
+              <button type="button" onClick={() => setSelectedHistoryIds(filteredHistoryPosts.map(post => post.id))} className="rounded-lg border px-3 py-2 text-[11px] font-semibold">Select all</button>
+              <button type="button" onClick={copyHistoryLinks} className="rounded-lg border px-3 py-2 text-[11px] font-semibold">Copy links</button>
+              <button type="button" onClick={exportHistory} className="rounded-lg bg-sky-600 px-3 py-2 text-[11px] font-bold text-white">Export CSV</button>
+            </div>
+          </div>
+          <input value={historyFilter} onChange={(event) => setHistoryFilter(event.target.value)} placeholder="Filter by day, keyword, airline, status, or title" className={`mt-4 w-full rounded-lg border p-2.5 text-xs outline-none ${isDarkMode ? 'border-slate-800 bg-slate-950 text-white' : 'border-slate-300 bg-slate-50 text-slate-900'}`} />
+          <div className="mt-4 space-y-2">
+            {filteredHistoryPosts.map(post => <label key={post.id} className={`flex items-center gap-3 rounded-lg border p-3 text-xs ${isDarkMode ? 'border-slate-800 bg-slate-950/50' : 'border-slate-200 bg-slate-50'}`}>
+              <input type="checkbox" checked={selectedHistoryIds.includes(post.id)} onChange={(event) => setSelectedHistoryIds(current => event.target.checked ? [...current, post.id] : current.filter(id => id !== post.id))} />
+              <span className="min-w-0 flex-1 truncate font-semibold">{post.title}</span>
+              <span className="hidden text-slate-500 sm:inline">{post.keyword}</span>
+              <span className="rounded-full bg-sky-500/10 px-2 py-1 text-[10px] font-bold text-sky-600">{post.status}</span>
+              {post.publishedUrl && <a href={post.publishedUrl} target="_blank" rel="noreferrer" className="text-sky-600 hover:underline">Open</a>}
+            </label>)}
+            {!filteredHistoryPosts.length && <p className="rounded-lg bg-slate-500/10 p-4 text-xs text-slate-500">No matching history items.</p>}
+          </div>
+        </section>
+
         {/* RIGHT COLUMN: Live Review Studio & Non-Technical Easy Editor */}
-        <div id="review-queue" className={`lg:col-span-7 border rounded-2xl p-5 shadow-sm flex flex-col justify-between space-y-4 transition-colors ${
+        <div id="review-queue" className={`${activeSection === 'review' ? '' : 'hidden'} lg:col-span-7 border rounded-2xl p-5 shadow-sm flex flex-col justify-between space-y-4 transition-colors ${
           isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
         }`}>
           <div>

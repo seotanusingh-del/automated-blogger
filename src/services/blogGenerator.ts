@@ -9,7 +9,9 @@ export function generateOfficeBannerSvg(
   officeName: string, 
   city: string, 
   tfnNumber: string,
-  theme: 'light' | 'dark' = 'light'
+  theme: 'light' | 'dark' = 'light',
+  companyName = '',
+  companyLogoUrl = ''
 ): string {
   const isSouthwest = airline.toLowerCase().includes('southwest');
   const isDelta = airline.toLowerCase().includes('delta');
@@ -22,6 +24,11 @@ export function generateOfficeBannerSvg(
                       isFrontier ? '#006643' :
                       isAlaska ? '#00a3e0' : '#0284c7';
 
+  const branding = companyName.trim();
+  const logo = companyLogoUrl.trim()
+    ? `<image href="${escapeXml(companyLogoUrl.trim())}" x="1030" y="45" width="115" height="70" preserveAspectRatio="xMidYMid meet"/>`
+    : '';
+  const brandLabel = branding ? `<text x="80" y="585" fill="#64748b" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="16" font-weight="700">${escapeXml(branding)}</text>` : '';
   let svg = '';
 
   if (theme === 'light') {
@@ -43,6 +50,7 @@ export function generateOfficeBannerSvg(
       </defs>
       
       <rect width="1200" height="630" fill="url(#lightBg)"/>
+      ${logo}
       <rect x="20" y="20" width="1160" height="590" rx="16" fill="none" stroke="#bae6fd" stroke-width="2"/>
       
       <path d="M-50,450 C350,150 750,550 1250,100" fill="none" stroke="${brandAccent}" stroke-width="2.5" stroke-dasharray="10 10" opacity="0.35"/>
@@ -93,6 +101,7 @@ export function generateOfficeBannerSvg(
         </text>
       </g>
 
+      ${brandLabel}
       <text x="1120" y="580" fill="#64748b" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="16" font-weight="600" text-anchor="end">
         easyflightconnectblog.blogspot.com
       </text>
@@ -112,6 +121,7 @@ export function generateOfficeBannerSvg(
       </defs>
       
       <rect width="1200" height="630" fill="url(#darkBg)"/>
+      ${logo}
       
       <path d="M-50,450 C350,150 750,550 1250,100" fill="none" stroke="${brandAccent}" stroke-width="2.5" stroke-dasharray="10 10" opacity="0.4"/>
       <path d="M-50,550 C450,280 800,600 1250,220" fill="none" stroke="#ffffff" stroke-width="1.5" stroke-dasharray="6 6" opacity="0.2"/>
@@ -161,6 +171,7 @@ export function generateOfficeBannerSvg(
         </text>
       </g>
 
+      ${brandLabel.replace(/#64748b/g, '#cbd5e1')}
       <text x="1120" y="580" fill="#94a3b8" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="16" font-weight="600" text-anchor="end">
         easyflightconnectblog.blogspot.com
       </text>
@@ -484,7 +495,9 @@ export function generateOfficeBlogPost(
   tfnNumber: string,
   customImageUrl?: string,
   socialLinks?: SocialLinks,
-  theme: 'light' | 'dark' = 'light'
+  theme: 'light' | 'dark' = 'light',
+  companyName = '',
+  companyLogoUrl = ''
 ): GeneratedPost {
   const cleanTfn = tfnNumber.trim() || '+1 (888) 794-3464';
   const city = office.city;
@@ -505,7 +518,7 @@ export function generateOfficeBlogPost(
 
   const permalinkSlug = `${airlineName.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${city.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-office`;
 
-  const bannerImg = customImageUrl || generateOfficeBannerSvg(airlineName, officeTitle, city, cleanTfn, theme);
+  const bannerImg = customImageUrl || generateOfficeBannerSvg(airlineName, officeTitle, city, cleanTfn, theme, companyName, companyLogoUrl);
 
   // Search description strictly 150-160 characters for maximum Google search CTR
   const searchDescription = `Complete guide for ${airlineName} ${city} office. Step-by-step dispute filing, compensation, ticket booking & 24/7 customer helpline ${cleanTfn}.`.slice(0, 160);

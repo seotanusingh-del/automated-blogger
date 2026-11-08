@@ -13,40 +13,20 @@ const IMAGE_BUCKET = 'DATA';
 
 export async function listPublicBucketImages(prefix = ''): Promise<string[]> {
   if (!supabase) {
-    const response = await fetch(`/api/storage/images?prefix=${encodeURIComponent(prefix)}`);
-    if (!response.ok) throw new Error('Public image library could not be loaded.');
-    const data = await response.json();
-    return Array.isArray(data.images) ? data.images : [];
+    return listImagesThroughApi(prefix);
   }
-  const { data, error } = await supabase.storage.from(IMAGE_BUCKET).list(prefix, {
-    limit: 100,
-    sortBy: { column: 'name', order: 'asc' }
-  });
-  if (error) throw error;
-  return (data || [])
-    .filter(file => !!file.name && /\.(avif|gif|jpe?g|png|webp)$/i.test(file.name))
-    .map(file => `${SUPABASE_PUBLIC_URL}/storage/v1/object/public/${IMAGE_BUCKET}/${prefix ? `${prefix}/` : ''}${encodeURIComponent(file.name)}`);
+  const { data, error } = await supabase.storage.from(IMAGE_BUCKET).list(prefix, { limit: 100, sortBy: { column: 'name', order: 'asc' } });
+  if (!error) {
+    return (data || [])
+      .filter(file => !!file.name && /\.(avif|gif|jpe?g|png|webp)$/i.test(file.name))
+      .map(file => `${SUPABASE_PUBLIC_URL}/storage/v1/object/public/${IMAGE_BUCKET}/${prefix ? `${prefix}/` : ''}${encodeURIComponent(file.name)}`);
+  }
+  return listImagesThroughApi(prefix);
 }
 
 export async function uploadImageToPublicBucket(file: Blob, filename: string): Promise<string> {
   if (!supabase) {
-    const bytes = new Uint8Array(await file.arrayBuffer());
-    let binary = '';
-    bytes.forEach(byte => { binary += String.fromCharCode(byte); });
-    const response = await fetch('/api/storage/upload', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        filename,
-        contentType: file.type || 'image/png',
-        data: btoa(binary)
-      })
-    });
-    const result = await response.json().catch(() => ({}));
-    if (!response.ok || !result.url) {
-      throw new Error(result.error || 'Image upload failed. Configure Supabase storage on the server.');
-    }
-    return result.url;
+    return uploadImageThroughApi(file, filename);
   }
   const safeName = filename.replace(/[^a-zA-Z0-9._-]/g, '-');
   const path = `Blog/${Date.now()}-${safeName}`;
@@ -54,8 +34,29 @@ export async function uploadImageToPublicBucket(file: Blob, filename: string): P
     contentType: file.type || 'image/png',
     upsert: false
   });
-  if (error) throw error;
-  return `${SUPABASE_PUBLIC_URL}/storage/v1/object/public/${IMAGE_BUCKET}/${path.split('/').map(encodeURIComponent).join('/')}`;
+  if (!error) return `${SUPABASE_PUBLIC_URL}/storage/v1/object/public/${IMAGE_BUCKET}/${path.split('/').map(encodeURIComponent).join('/')}`;
+  return uploadImageThroughApi(file, filename);
+}
+
+async function listImagesThroughApi(prefix: string): Promise<string[]> {
+  const response = await fetch(`/api/storage/images?prefix=${encodeURIComponent(prefix)}`);
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || 'Public image library could not be loaded.');
+  return Array.isArray(data.images) ? data.images : [];
+}
+
+async function uploadImageThroughApi(file: Blob, filename: string): Promise<string> {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  let binary = '';
+  bytes.forEach(byte => { binary += String.fromCharCode(byte); });
+  const response = await fetch('/api/storage/upload', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ filename, contentType: file.type || 'image/png', data: btoa(binary) })
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok || !result.url) throw new Error(result.error || 'Image upload failed. Check Supabase storage credentials and bucket policies.');
+  return result.url;
 }
 
 export interface StoredPost {

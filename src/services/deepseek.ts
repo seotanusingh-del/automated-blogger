@@ -133,8 +133,8 @@ Return valid JSON with this exact structure:
         tfn,
         recentPosts,
         variationSeed: requestVariationSeed,
-        apiKey: provider === 'deepseek' ? (customKey || undefined) : undefined,
-        geminiApiKey: provider === 'gemini' ? (getGeminiApiKey() || undefined) : undefined
+        apiKey: customKey || undefined,
+        geminiApiKey: getGeminiApiKey() || undefined
       })
     });
 

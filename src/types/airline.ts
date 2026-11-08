@@ -94,4 +94,6 @@ export interface GeneratedPost {
   bloggerSettings?: BloggerSubSettings;
   verified?: boolean;
   isAiGenerated?: boolean;
+  companyName?: string;
+  companyLogoUrl?: string;
 }

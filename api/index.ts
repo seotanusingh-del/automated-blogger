@@ -6,10 +6,10 @@ dotenv.config();
 const app = express();
 app.use(express.json({ limit: '10mb' }));
 
-const storageUrl = process.env.SUPABASE_URL || 'https://gplxknbnohajegmxkvot.supabase.co';
+const storageUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || 'https://gplxknbnohajegmxkvot.supabase.co';
 const storageBucket = 'DATA';
 const publicStorageUrl = `${storageUrl}/storage/v1/object/public/${storageBucket}`;
-const pollinationsApiKey = process.env.POLLINATIONS_API_KEY || process.env.POLLINATIONS_SECRET_KEY || '';
+const pollinationsApiKey = process.env.POLLINATIONS_API_KEY || process.env.POLLINATIONS_SECRET_KEY || process.env.VITE_POLLINATIONS_API_KEY || '';
 
 function normalizeAiContent(value: any) {
   if (!value || typeof value !== 'object' || typeof value.title !== 'string' || typeof value.overview !== 'string' || !Array.isArray(value.services) || !Array.isArray(value.faqs)) {
@@ -58,7 +58,7 @@ app.get(['/api/images/pollinations', '/images/pollinations'], async (req, res) =
 
 app.get(['/api/storage/images', '/storage/images'], async (req, res) => {
   const prefix = String(req.query.prefix || '');
-  const serviceKey = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
+  const serviceKey = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
   if (!serviceKey) {
     return res.status(503).json({ error: 'Set SUPABASE_SERVICE_KEY or SUPABASE_ANON_KEY in Vercel to load the public DATA image library.' });
   }
@@ -84,7 +84,7 @@ app.get(['/api/storage/images', '/storage/images'], async (req, res) => {
 });
 
 app.post(['/api/storage/upload', '/storage/upload'], async (req, res) => {
-  const serviceKey = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const serviceKey = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
   const { filename, contentType, data } = req.body || {};
   if (!serviceKey) return res.status(503).json({ error: 'Supabase service storage is not configured.' });
   if (!filename || !data) return res.status(400).json({ error: 'Missing image filename or data.' });
@@ -260,8 +260,8 @@ Return valid JSON with this exact structure:
 }`;
 
     const providers: string[] = [];
-    const deepseekKey = (apiKey && String(apiKey).trim()) || process.env.DEEPSEEK_API_KEY || '';
-    const geminiKey = (geminiApiKey && String(geminiApiKey).trim()) || process.env.GEMINI_API_KEY || '';
+    const deepseekKey = (apiKey && String(apiKey).trim()) || process.env.DEEPSEEK_API_KEY || process.env.VITE_DEEPSEEK_API_KEY || '';
+    const geminiKey = (geminiApiKey && String(geminiApiKey).trim()) || process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || '';
     if (geminiKey) providers.push('gemini');
     if (deepseekKey) providers.push('deepseek');
     if (pollinationsApiKey) providers.push('pollinations');
