@@ -89,7 +89,7 @@ app.post(['/api/storage/upload', '/storage/upload'], async (req, res) => {
   if (!serviceKey) return res.status(503).json({ error: 'Supabase service storage is not configured.' });
   if (!filename || !data) return res.status(400).json({ error: 'Missing image filename or data.' });
   const safeName = String(filename).replace(/[^a-zA-Z0-9._-]/g, '-');
-  const path = `Blog/${Date.now()}-${safeName}`;
+  const path = `Airlines/${Date.now()}-${safeName}`;
   try {
     const response = await fetch(`${storageUrl}/storage/v1/object/${storageBucket}/${path}`, {
       method: 'POST',

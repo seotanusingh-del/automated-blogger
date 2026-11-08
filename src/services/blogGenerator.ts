@@ -207,9 +207,11 @@ export function buildHtmlFromSections(
   country: string,
   sections: PostSections,
   socialLinks?: SocialLinks,
-  bloggerSettings?: BloggerSubSettings
+  bloggerSettings?: BloggerSubSettings,
+  companyName = ''
 ): string {
   const cleanTfn = tfnNumber.trim() || '+1 (888) 794-3464';
+  const publisherName = companyName.trim() || 'EasyFlightConnect';
   const telLink = cleanTfn.replace(/[^0-9+]/g, '');
   const permalinkSlug = bloggerSettings?.permalinkSlug || `${airlineName.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${city.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-office`;
   const canonicalUrl = `https://easyflightconnectblog.blogspot.com/2026/10/${permalinkSlug}.html`;
@@ -345,7 +347,7 @@ export function buildHtmlFromSections(
         "dateModified": new Date().toISOString(),
         "publisher": {
           "@type": "Organization",
-          "name": "EasyFlightConnect",
+          "name": publisherName,
           "url": "https://easyflightconnectblog.blogspot.com"
         }
       },
@@ -382,6 +384,7 @@ ${JSON.stringify(schemaJson, null, 2)}
 ${schemaHtml}
 
 <h1>${escapeXml(title)}</h1>
+${companyName.trim() ? `<p style="font-size:13px;color:#475569;font-weight:700;">Published by ${escapeXml(companyName.trim())}</p>` : ''}
 <img src="${bannerImg}" alt="${escapeXml(airlineName)} ${escapeXml(officeTitle)} Customer Support and Flight Desk" style="max-width:100%;height:auto;border-radius:10px;margin:16px 0;box-shadow:0 6px 18px rgba(0,0,0,0.12);" />
 <p style="font-size:16px;line-height:1.75;">Facing a problem with an ${escapeXml(airlineName)} booking, flight schedule, baggage, payment, or customer service? Understanding the dispute process can help passengers explain their concerns and request a fair review. Whether the issue involves a reservation, a flight disruption, or a service concern, keeping accurate travel records is an important first step.${escapeXml(cleanTfn)}</p>
 
@@ -606,7 +609,8 @@ export function generateOfficeBlogPost(
     country,
     defaultSections,
     socialLinks,
-    bloggerSettings
+    bloggerSettings,
+    companyName
   );
 
   return {
@@ -625,6 +629,8 @@ export function generateOfficeBlogPost(
     labels: bloggerSettings.labels,
     socialLinks,
     sections: defaultSections,
-    bloggerSettings
+    bloggerSettings,
+    companyName,
+    companyLogoUrl
   };
 }

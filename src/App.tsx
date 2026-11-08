@@ -200,7 +200,7 @@ export default function App() {
           return parsed.generatedPosts.map((p: any) => {
             const banner = p.imageUrl && p.imageUrl.trim() && !p.imageUrl.startsWith('data:image/svg')
               ? p.imageUrl
-              : generateOfficeBannerSvg(p.airlineName, p.officeName, p.city, p.tfnNumber, theme);
+              : generateOfficeBannerSvg(p.airlineName, p.officeName, p.city, p.tfnNumber, theme, p.companyName || companyName, p.companyLogoUrl || companyLogoUrl);
 
             const html = p.htmlContent && p.htmlContent.length > 50
               ? p.htmlContent
@@ -214,7 +214,8 @@ export default function App() {
                   p.country,
                   p.sections,
                   p.socialLinks,
-                  p.bloggerSettings
+                  p.bloggerSettings,
+                  p.companyName || companyName
                 ) : '');
 
             return {
@@ -251,6 +252,14 @@ export default function App() {
   const [bulkProgress, setBulkProgress] = useState<{ current: number; total: number; currentTitle?: string } | null>(null);
 
   const activePost = generatedPosts[currentPostIndex] || null;
+  const workflowSteps = ['setup', 'airlines', 'drafts', 'review', 'history'] as const;
+  const goToWorkflowStep = (direction: 1 | -1) => {
+    const current = workflowSteps.indexOf(activeSection);
+    const next = Math.min(workflowSteps.length - 1, Math.max(0, current + direction));
+    setActiveSection(workflowSteps[next]);
+    setIsSidebarOpen(false);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
   const filteredHistoryPosts = generatedPosts.filter(post => {
     const query = historyFilter.trim().toLowerCase();
     return !query || [post.title, post.keyword, post.airlineName, post.status, post.publishedUrl || ''].some(value => value.toLowerCase().includes(query));
@@ -342,7 +351,7 @@ export default function App() {
   }, [customImages]);
 
   useEffect(() => {
-    Promise.all([listPublicBucketImages('airlines'), listPublicBucketImages('Blog')])
+    Promise.all([listPublicBucketImages('Airlines'), listPublicBucketImages('Blog')])
       .then(([airlineImages, blogImages]) => setImageLibrary([...new Set([...airlineImages, ...blogImages])]))
       .catch(error => console.warn('Could not load public image library:', error));
   }, []);
@@ -460,7 +469,9 @@ export default function App() {
         activePost.city,
         activePost.country,
         updatedSections,
-        activePost.socialLinks
+        activePost.socialLinks,
+        activePost.bloggerSettings,
+        companyName
       );
       const updated = { ...activePost, imageUrl: newBanner, htmlContent: updatedHtml };
       const newPosts = [...generatedPosts];
@@ -658,7 +669,8 @@ export default function App() {
         post.country,
         updatedSections,
         post.socialLinks || socialLinks,
-        post.bloggerSettings
+        post.bloggerSettings,
+        post.companyName || companyName
       );
 
       const finalPost: GeneratedPost = {
@@ -771,7 +783,8 @@ export default function App() {
           post.country,
           updatedSections,
           post.socialLinks || socialLinks,
-          post.bloggerSettings
+          post.bloggerSettings,
+          post.companyName || companyName
         );
 
         const finalPost: GeneratedPost = {
@@ -802,7 +815,8 @@ export default function App() {
     post: GeneratedPost,
     sections: PostSections,
     imageUrl: string,
-    links: SocialLinks = post.socialLinks || socialLinks
+    links: SocialLinks = post.socialLinks || socialLinks,
+    branding = post.companyName || companyName
   ): GeneratedPost => ({
     ...post,
     sections,
@@ -818,7 +832,8 @@ export default function App() {
       post.country,
       sections,
       links,
-      post.bloggerSettings
+      post.bloggerSettings,
+      branding
     )
   });
 
@@ -912,7 +927,7 @@ export default function App() {
           officeAddress: post.officeName,
           servicesList: [],
           faqs: []
-        }, banner),
+        }, banner, post.socialLinks || socialLinks, companyName),
         companyName,
         companyLogoUrl
       };
@@ -1007,7 +1022,8 @@ export default function App() {
       activePost.country,
       activePost.sections,
       activePost.socialLinks,
-      updatedSettings
+      updatedSettings,
+      activePost.companyName || companyName
     );
     const updated: GeneratedPost = {
       ...activePost,
@@ -1327,18 +1343,9 @@ export default function App() {
             <span className="font-semibold">{customRefreshToken ? 'Custom Token' : 'Google Token'}</span>
           </button>
 
-          <a
-            href="https://seo-indexer-tool.vercel.app/"
-            target="_blank"
-            rel="noopener noreferrer"
-            className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition ${
-              isDarkMode ? 'border-sky-800 bg-sky-950/30 text-sky-300 hover:bg-sky-950/60' : 'border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100'
-            }`}
-            title="Open Blogger Indexer"
-          >
-            <ExternalLink className="h-3.5 w-3.5" />
-            Blogger Indexer
-          </a>
+          <button type="button" onClick={() => setIsSidebarOpen(true)} className="rounded-lg border p-2" aria-label="Open workflow navigation">
+            <Settings className="h-4 w-4" />
+          </button>
 
           {/* Publish Secret Config Button */}
           <button
@@ -1451,10 +1458,10 @@ export default function App() {
 
       {/* Settings and related tools remain available without crowding the header. */}
       {isSidebarOpen && <button type="button" aria-label="Close navigation" onClick={() => setIsSidebarOpen(false)} className="fixed inset-0 z-40 bg-slate-950/40 lg:hidden" />}
-      <aside className={`${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} fixed left-0 top-0 bottom-0 z-50 w-72 border-r p-4 transition-transform lg:top-[57px] lg:w-52 lg:translate-x-0 ${
+      <aside className={`${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} fixed left-0 top-0 bottom-0 z-50 w-[min(86vw,20rem)] border-r p-4 transition-transform ${
         isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
       }`}>
-        <div className="mb-5 flex items-center justify-between lg:hidden"><span className="text-sm font-black">Navigation</span><button type="button" onClick={() => setIsSidebarOpen(false)}><ChevronLeft className="h-4 w-4" /></button></div>
+        <div className="mb-5 flex items-center justify-between"><span className="text-sm font-black">Navigation</span><button type="button" onClick={() => setIsSidebarOpen(false)} aria-label="Close navigation"><ChevronLeft className="h-4 w-4" /></button></div>
         <p className="mb-3 px-2 text-[10px] font-black uppercase tracking-wider text-slate-500">Workflow</p>
         <nav className="space-y-1 text-xs font-semibold">
           {([
@@ -1487,10 +1494,10 @@ export default function App() {
         </nav>
       </aside>
 
-      <main className="flex-1 max-w-7xl w-full mx-auto p-5 lg:pl-60 grid grid-cols-1 lg:grid-cols-12 gap-6">
+      <main className="flex-1 w-full max-w-7xl mx-auto p-3 sm:p-5 lg:pl-6">
 
         {/* LEFT COLUMN: Controls, TFN, Keyword, Airline Selector */}
-        <div id="workspace-controls" className="lg:col-span-5 space-y-4">
+        <div id="workspace-controls" className={`w-full max-w-6xl mx-auto space-y-4 ${activeSection === 'review' || activeSection === 'history' ? 'hidden' : ''}`}>
           
           <div className={`border rounded-2xl p-5 shadow-sm space-y-4 transition-colors ${
             isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
@@ -1752,7 +1759,7 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => {
-                    Promise.all([listPublicBucketImages('airlines'), listPublicBucketImages('Blog')])
+                    Promise.all([listPublicBucketImages('Airlines'), listPublicBucketImages('Blog')])
                       .then(([airlineImages, blogImages]) => setImageLibrary([...new Set([...airlineImages, ...blogImages])]))
                       .catch(error => setStatusMessage(error instanceof Error ? error.message : 'Image library refresh failed.'));
                   }}
@@ -1792,7 +1799,7 @@ export default function App() {
           </div>
         </div>
 
-        <section className={`${activeSection === 'history' ? '' : 'hidden'} lg:col-span-7 rounded-2xl border p-5 shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
+        <section className={`${activeSection === 'history' ? '' : 'hidden'} w-full max-w-6xl mx-auto rounded-2xl border p-3 sm:p-5 shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div><h2 className="text-lg font-black">Logs, status & history</h2><p className="text-xs text-slate-500">Filter, select, copy links, or export your workflow records.</p></div>
             <div className="flex gap-2">
@@ -1815,7 +1822,7 @@ export default function App() {
         </section>
 
         {/* RIGHT COLUMN: Live Review Studio & Non-Technical Easy Editor */}
-        <div id="review-queue" className={`${activeSection === 'review' ? '' : 'hidden'} lg:col-span-7 border rounded-2xl p-5 shadow-sm flex flex-col justify-between space-y-4 transition-colors ${
+        <div id="review-queue" className={`${activeSection === 'review' ? '' : 'hidden'} w-full max-w-6xl mx-auto border rounded-2xl p-3 sm:p-5 shadow-sm flex flex-col justify-between space-y-4 transition-colors ${
           isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
         }`}>
           <div>
@@ -2249,6 +2256,17 @@ export default function App() {
 
         </div>
 
+        <div className={`mx-auto mt-5 flex w-full max-w-6xl items-center justify-between gap-3 rounded-2xl border p-3 sm:p-4 ${isDarkMode ? 'border-slate-800 bg-slate-900' : 'border-slate-200 bg-white'}`}>
+          <button type="button" onClick={() => goToWorkflowStep(-1)} disabled={activeSection === workflowSteps[0]} className="rounded-xl border px-4 py-2 text-xs font-bold disabled:cursor-not-allowed disabled:opacity-40">
+            <ChevronLeft className="mr-1 inline h-4 w-4" /> Previous
+          </button>
+          <span className="text-center text-[11px] font-bold text-slate-500">
+            Step {workflowSteps.indexOf(activeSection) + 1} of {workflowSteps.length}
+          </span>
+          <button type="button" onClick={() => goToWorkflowStep(1)} disabled={activeSection === workflowSteps[workflowSteps.length - 1]} className="rounded-xl bg-sky-600 px-4 py-2 text-xs font-bold text-white disabled:cursor-not-allowed disabled:opacity-40">
+            Next <ChevronRight className="ml-1 inline h-4 w-4" />
+          </button>
+        </div>
       </main>
 
       {/* Website, Portals, Social & Custom Links Modal */}

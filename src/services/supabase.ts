@@ -29,7 +29,7 @@ export async function uploadImageToPublicBucket(file: Blob, filename: string): P
     return uploadImageThroughApi(file, filename);
   }
   const safeName = filename.replace(/[^a-zA-Z0-9._-]/g, '-');
-  const path = `Blog/${Date.now()}-${safeName}`;
+  const path = `Airlines/${Date.now()}-${safeName}`;
   const { error } = await supabase.storage.from(IMAGE_BUCKET).upload(path, file, {
     contentType: file.type || 'image/png',
     upsert: false
