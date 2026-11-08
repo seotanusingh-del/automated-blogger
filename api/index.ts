@@ -74,10 +74,29 @@ app.get(['/api/storage/images', '/storage/images'], async (req, res) => {
     });
     const files = await response.json();
     if (!response.ok) return res.status(response.status).json({ error: files?.message || 'Storage listing failed.' });
-    const images = (Array.isArray(files) ? files : [])
+    const entries = Array.isArray(files) ? files : [];
+    const images = entries
       .filter((file: { name?: string }) => !!file.name && /\.(avif|gif|jpe?g|png|webp)$/i.test(file.name))
       .map((file: { name: string }) => `${publicStorageUrl}/${prefix ? `${prefix}/` : ''}${encodeURIComponent(file.name)}`);
-    res.json({ images });
+    const folders = entries
+      .filter((file: { name?: string; id?: string | null }) => !!file.name && !file.id && !/\./.test(file.name))
+      .slice(0, 25);
+    const nested = await Promise.all(folders.map(async (folder: { name: string }) => {
+      const nestedResponse = await fetch(`${storageUrl}/storage/v1/object/list/${storageBucket}`, {
+        method: 'POST',
+        headers: {
+          Authorization: `******`,
+          apikey: serviceKey,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ prefix: prefix ? `${prefix}/${folder.name}` : folder.name, limit: 100, sortBy: { column: 'name', order: 'asc' } })
+      });
+      const nestedFiles = await nestedResponse.json().catch(() => []);
+      return (Array.isArray(nestedFiles) ? nestedFiles : [])
+        .filter((file: { name?: string }) => !!file.name && /\.(avif|gif|jpe?g|png|webp)$/i.test(file.name))
+        .map((file: { name: string }) => `${publicStorageUrl}/${prefix ? `${prefix}/` : ''}${encodeURIComponent(folder.name)}/${encodeURIComponent(file.name)}`);
+    }));
+    res.json({ images: [...images, ...nested.flat()] });
   } catch (error) {
     res.status(500).json({ error: error instanceof Error ? error.message : 'Storage listing failed.' });
   }

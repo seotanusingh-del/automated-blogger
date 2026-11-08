@@ -8,13 +8,15 @@ interface AirlineManagerModalProps {
   onClose: () => void;
   airlines: AirlineItem[];
   onSave: (updatedAirlines: AirlineItem[]) => void;
+  entityLabel?: string;
 }
 
 export const AirlineManagerModal: React.FC<AirlineManagerModalProps> = ({
   isOpen,
   onClose,
   airlines,
-  onSave
+  onSave,
+  entityLabel = 'Airline'
 }) => {
   const [airlineList, setAirlineList] = useState<AirlineItem[]>(airlines);
   const [bulkInput, setBulkInput] = useState('');
@@ -99,10 +101,10 @@ export const AirlineManagerModal: React.FC<AirlineManagerModalProps> = ({
         <div className="flex items-center justify-between pb-4 border-b border-slate-800">
           <div>
             <h2 className="text-base font-bold text-white">
-              Airline Manager ({airlineList.length} Airlines)
+              {entityLabel} Manager ({airlineList.length} {entityLabel}s)
             </h2>
             <p className="text-xs text-slate-400">
-              Manage active carriers and their associated regional/airport offices.
+              Manage entries and their associated locations.
             </p>
           </div>
           <button

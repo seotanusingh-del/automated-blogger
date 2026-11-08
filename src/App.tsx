@@ -76,6 +76,8 @@ import {
 } from './services/deepseek';
 
 type SavedTemplate = GeneratedPost & { templateName?: string };
+type BlogType = 'airlines' | 'travel' | 'hotels' | 'agency';
+const N8N_BLOG_WEBHOOK = 'https://automated-blogger.app.n8n.cloud/webhook/seo-blog-generator';
 import {
   getRecentPosts,
   listPublicBucketImages,
@@ -140,7 +142,11 @@ export default function App() {
   const [companyLogoUrl, setCompanyLogoUrl] = useState<string>(() => {
     try { return JSON.parse(localStorage.getItem('easyflight_session_draft') || '{}').companyLogoUrl || ''; } catch { return ''; }
   });
+  const [contactEmail, setContactEmail] = useState<string>(() => {
+    try { return JSON.parse(localStorage.getItem('easyflight_session_draft') || '{}').contactEmail || ''; } catch { return ''; }
+  });
   const [activeSection, setActiveSection] = useState<'setup' | 'airlines' | 'review' | 'drafts' | 'history'>('setup');
+  const [blogType, setBlogType] = useState<BlogType>(() => (localStorage.getItem('easyflight_blog_type') as BlogType) || 'airlines');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [historyFilter, setHistoryFilter] = useState('');
   const [historyStatusFilter, setHistoryStatusFilter] = useState<'all' | GeneratedPost['status']>('all');
@@ -187,6 +193,7 @@ export default function App() {
     try { return JSON.parse(localStorage.getItem('easyflight_custom_images') || '[]'); } catch { return []; }
   });
   const [imageLibrary, setImageLibrary] = useState<string[]>([]);
+  const [isLoadingImageLibrary, setIsLoadingImageLibrary] = useState(false);
   const [isUploadingImages, setIsUploadingImages] = useState(false);
   const [savedTemplates, setSavedTemplates] = useState<SavedTemplate[]>(() => {
     try { return JSON.parse(localStorage.getItem('easyflight_saved_templates') || '[]'); } catch { return []; }
@@ -318,6 +325,7 @@ export default function App() {
         targetKeyword,
         companyName,
         companyLogoUrl,
+        contactEmail,
         socialLinks,
         currentPostIndex,
         generatedPosts: compactPosts
@@ -338,7 +346,7 @@ export default function App() {
         console.error('Failed to write to localStorage:', innerErr);
       }
     }
-  }, [blogId, commonTfn, targetKeyword, companyName, companyLogoUrl, socialLinks, currentPostIndex, generatedPosts]);
+  }, [blogId, commonTfn, targetKeyword, companyName, companyLogoUrl, contactEmail, socialLinks, currentPostIndex, generatedPosts]);
 
   // Safely persist airlines to localStorage
   useEffect(() => {
@@ -354,11 +362,20 @@ export default function App() {
     catch (error) { console.warn('Could not save custom images locally:', error); }
   }, [customImages]);
 
-  useEffect(() => {
-    Promise.all([listPublicBucketImages('Airlines'), listPublicBucketImages('Blog')])
-      .then(([airlineImages, blogImages]) => setImageLibrary([...new Set([...airlineImages, ...blogImages])]))
-      .catch(error => console.warn('Could not load public image library:', error));
-  }, []);
+  const refreshImageLibrary = async () => {
+    setIsLoadingImageLibrary(true);
+    try {
+      const prefixes = ['Airlines', 'Blog', ''];
+      const images = await Promise.all(prefixes.map(prefix => listPublicBucketImages(prefix)));
+      setImageLibrary([...new Set(images.flat())]);
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : 'Image library refresh failed.');
+    } finally {
+      setIsLoadingImageLibrary(false);
+    }
+  };
+
+  useEffect(() => { void refreshImageLibrary(); }, []);
 
   useEffect(() => {
     localStorage.setItem('easyflight_saved_templates', JSON.stringify(savedTemplates));
@@ -503,6 +520,19 @@ export default function App() {
 
   const selectedAirlines = airlines.filter((a: AirlineItem) => a.selected);
 
+  const handleBlogTypeChange = (nextType: BlogType) => {
+    setBlogType(nextType);
+    localStorage.setItem('easyflight_blog_type', nextType);
+    if (nextType !== 'airlines') {
+      setAirlines([]);
+      setAirlineFilter('');
+      setStatusMessage(`Add your ${nextType === 'hotels' ? 'hotels' : nextType === 'travel' ? 'travel entries' : 'client entries'} in Step 2 using Manage.`);
+    } else if (airlines.length === 0) {
+      setAirlines(DEFAULT_AIRLINES);
+      setStatusMessage('Default airline and office entries restored.');
+    }
+  };
+
   const addCustomImages = async (files: FileList | File[]) => {
     const imageFiles = Array.from(files).filter(file => file.type.startsWith('image/'));
     if (!imageFiles.length) return;
@@ -635,6 +665,68 @@ export default function App() {
       setStatusMessage(`Generated ${newQueue.length} flight blogs with TFN (${commonTfn})! Review and edit using the Easy Editor.`);
       setTimeout(() => setStatusMessage(null), 5000);
     }, 600);
+  };
+
+  const handleGenerateWithWorkflow = async () => {
+    if (isGeneratingBulk) return;
+    setIsGeneratingBulk(true);
+    setStatusMessage('Sending one token-saving generation request to the workflow...');
+    try {
+      const response = await fetch(N8N_BLOG_WEBHOOK, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          blogType,
+          keyword: targetKeyword.trim(),
+          topic: targetKeyword.trim(),
+          companyName: companyName.trim(),
+          companyWebsite: socialLinks.website || '',
+          email: contactEmail.trim(),
+          tfn: commonTfn,
+          seo: {
+            searchIntent: 'informational and commercial',
+            includeFaqs: true,
+            includeStructuredHtml: true,
+            includeInternalLinks: true
+          },
+          request: 'Return exactly one SEO blog as title, content_html, and optional banner_url. The app will adapt this single article for every selected Step 2 entry.'
+        })
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || `Workflow returned ${response.status}.`);
+      const payload = Array.isArray(result) ? result[0] : (result.data || result);
+      const title = String(payload.title || targetKeyword || 'SEO travel guide');
+      const content = String(payload.content_html || payload.content || payload.html || '');
+      if (!content) throw new Error('Workflow returned no article HTML.');
+      const banner = String(payload.banner_url || payload.image_url || customImages[0] || '');
+      const entries = selectedAirlines.length > 0 ? selectedAirlines : airlines;
+      if (!entries.length) throw new Error('Add and select at least one entry in Step 2 before running the workflow.');
+      const queue: GeneratedPost[] = [];
+      entries.forEach((entry, entryIndex) => {
+        const offices = entry.offices.length ? entry.offices : [{ id: `${entry.id}-hq`, name: `${entry.name} Headquarters`, city: 'Headquarters', country: 'United States' }];
+        offices.forEach((office, officeIndex) => {
+          const imageUrl = banner || customImages[(entryIndex + officeIndex) % Math.max(customImages.length, 1)] || generateOfficeBannerSvg(entry.name, office.name, office.city, commonTfn, isDarkMode ? 'dark' : 'light', companyName, companyLogoUrl, socialLinks.website);
+          queue.push({
+            ...generateOfficeBlogPost(entry, office, targetKeyword, commonTfn, imageUrl, socialLinks, isDarkMode ? 'dark' : 'light', companyName, companyLogoUrl, socialLinks.website),
+            title: title.replace(/\{\{(entry|airline|brand)\}\}/gi, entry.name),
+            htmlContent: content.replace(/\{\{(entry|airline|brand)\}\}/gi, entry.name),
+            imageUrl,
+            status: 'Ready',
+            verified: true,
+            isAiGenerated: true
+          });
+        });
+      });
+      setGeneratedPosts(queue);
+      setCurrentPostIndex(0);
+      setActiveSection('review');
+      setStatusMessage(`Workflow returned one article and adapted it into ${queue.length} review-ready blog${queue.length === 1 ? '' : 's'}.`);
+    } catch (error) {
+      console.error('n8n workflow generation failed:', error);
+      setStatusMessage(error instanceof Error ? error.message : 'n8n workflow generation failed.');
+    } finally {
+      setIsGeneratingBulk(false);
+    }
   };
 
   // AI-Powered Single Post Generator
@@ -867,11 +959,12 @@ export default function App() {
     if (!post.imageUrl.startsWith('data:')) return post;
     const response = await fetch(post.imageUrl);
     const blob = await response.blob();
-    const publicUrl = await uploadImageToPublicBucket(blob, `${post.airlineName}-${post.city}-blog.png`);
+    const extension = blob.type.split('/')[1] || 'png';
+    const publicUrl = await uploadImageToPublicBucket(blob, `${post.airlineName}-${post.city}-blog.${extension}`);
     return {
       ...post,
       imageUrl: publicUrl,
-      htmlContent: post.htmlContent.replace(/src="data:image\/[^"]+"/, `src="${publicUrl}"`)
+      htmlContent: post.htmlContent.replace(/src="data:image\/[^"]+"/g, `src="${publicUrl}"`)
     };
   };
 
@@ -1551,6 +1644,13 @@ export default function App() {
                 placeholder="Agency or company name"
                 className={`mt-3 w-full rounded-lg border p-2.5 text-xs outline-none ${isDarkMode ? 'border-slate-800 bg-slate-950 text-white' : 'border-slate-300 bg-white text-slate-900'}`}
               />
+              <input
+                type="email"
+                value={contactEmail}
+                onChange={(event) => setContactEmail(event.target.value)}
+                placeholder="Contact email for the workflow"
+                className={`mt-2 w-full rounded-lg border p-2.5 text-xs outline-none ${isDarkMode ? 'border-slate-800 bg-slate-950 text-white' : 'border-slate-300 bg-white text-slate-900'}`}
+              />
               <div className="mt-2 flex items-center gap-3">
                 {companyLogoUrl && <img src={companyLogoUrl} alt="Company logo preview" className="h-10 w-10 rounded-lg border border-slate-300 object-contain dark:border-slate-700" />}
                 <label className="cursor-pointer rounded-lg border border-slate-300 px-3 py-2 text-[11px] font-semibold dark:border-slate-700">
@@ -1560,6 +1660,17 @@ export default function App() {
                 {companyLogoUrl && <button type="button" onClick={() => setCompanyLogoUrl('')} className="text-[11px] font-semibold text-rose-500">Remove</button>}
               </div>
               <button type="button" onClick={applyBrandingToPosts} className="mt-3 rounded-lg bg-sky-600 px-3 py-2 text-[11px] font-bold text-white hover:bg-sky-500">Apply branding to blog queue</button>
+            </div>
+
+            <div className={activeSection === 'setup' ? '' : 'hidden'}>
+              <label className="block text-xs font-bold">Blog type</label>
+              <select value={blogType} onChange={(event) => handleBlogTypeChange(event.target.value as BlogType)} className={`mt-1 w-full rounded-lg border p-2.5 text-xs ${isDarkMode ? 'border-slate-800 bg-slate-950 text-white' : 'border-slate-300 bg-white text-slate-900'}`}>
+                <option value="airlines">Airlines &amp; flights</option>
+                <option value="travel">Travel services</option>
+                <option value="hotels">Hotels &amp; hospitality</option>
+                <option value="agency">SEO agency client</option>
+              </select>
+              <p className="mt-1 text-[11px] text-slate-500">Step 2 changes to a blank manager for non-airline projects so you can add your own entries and locations.</p>
             </div>
 
             {/* Common TFN Number Input */}
@@ -1677,7 +1788,7 @@ export default function App() {
                 />
               </div>
 
-              {/* Airline Grid */}
+              {/* Entry Grid */}
               <div className={`grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-56 overflow-y-auto p-1.5 rounded-xl border ${
                 isDarkMode ? 'bg-slate-950/70 border-slate-800' : 'bg-slate-50 border-slate-200'
               }`}>
@@ -1713,7 +1824,7 @@ export default function App() {
                   }`}
                 >
                   <Settings className="w-3.5 h-3.5" />
-                  Manage Airlines ({airlines.length})
+                  Manage {blogType === 'airlines' ? 'Airlines' : blogType === 'hotels' ? 'Hotels' : blogType === 'travel' ? 'Travel entries' : 'Client entries'} ({airlines.length})
                 </button>
 
                 <button
@@ -1725,17 +1836,26 @@ export default function App() {
                   title="Generate base template drafts without using AI tokens"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${isGeneratingBulk && !bulkProgress ? 'animate-spin' : ''}`} />
-                  {isGeneratingBulk && !bulkProgress ? 'Synthesizing...' : 'Draft (Template)'}
+                  {isGeneratingBulk && !bulkProgress ? 'Creating...' : 'Create draft'}
                 </button>
 
                 <button
                   onClick={handleGenerateBulkAI}
                   disabled={isGeneratingBulk || selectedAirlines.length === 0}
                   className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-bold transition flex items-center gap-1.5 flex-1 justify-center shadow"
-                  title={`Generate 100% unique, human-grade SEO articles using ${aiProvider}`}
+                  title="Generate unique, human-grade SEO articles"
                 >
                   <Sparkles className={`w-4 h-4 ${isGeneratingBulk && bulkProgress ? 'animate-spin' : ''}`} />
-                  {isGeneratingBulk && bulkProgress ? `${aiProvider} Writing...` : `✨ Bulk AI Magic (${aiProvider})`}
+                  {isGeneratingBulk && bulkProgress ? 'Writing...' : '✨ Generate content'}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleGenerateWithWorkflow}
+                  disabled={isGeneratingBulk || selectedAirlines.length === 0}
+                  className="px-3 py-2.5 rounded-xl border border-violet-300 bg-violet-500/10 text-violet-700 dark:text-violet-300 text-xs font-bold transition disabled:opacity-50 flex-1 justify-center"
+                  title="Send keyword, topic, company, email, TFN and SEO requirements to n8n"
+                >
+                  Workflow
                 </button>
               </div>
 
@@ -1748,8 +1868,8 @@ export default function App() {
               >
                 <div className="flex items-center justify-between gap-3">
                   <div>
-                    <p className="text-xs font-bold">Custom Blog Images</p>
-                    <p className="text-[11px] text-slate-500">Choose from the public library or upload images for new posts.</p>
+                    <p className="text-xs font-bold">Banner image library</p>
+                    <p className="text-[11px] text-slate-500">Select an existing DATA bucket image or upload a local banner. It is converted to a public URL before Blogger publishing.</p>
                   </div>
                   <label className="shrink-0 cursor-pointer rounded-lg bg-sky-600 px-3 py-2 text-[11px] font-bold text-white hover:bg-sky-500">
                     {isUploadingImages ? 'Uploading...' : 'Upload images'}
@@ -1789,7 +1909,8 @@ export default function App() {
                     </div>
                   </>
                 )}
-                {imageLibrary.length === 0 && !isUploadingImages && (
+                {isLoadingImageLibrary && <p className="mt-3 text-[11px] text-sky-600 dark:text-sky-400">Loading images from DATA/Airlines and DATA/Blog...</p>}
+                {imageLibrary.length === 0 && !isUploadingImages && !isLoadingImageLibrary && (
                   <p className="mt-3 rounded-lg bg-amber-500/10 p-2 text-[11px] text-amber-700 dark:text-amber-300">
                     No public images were returned. Configure the Supabase anon key for listing or use Upload images.
                   </p>
@@ -1797,9 +1918,7 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => {
-                    Promise.all([listPublicBucketImages('Airlines'), listPublicBucketImages('Blog')])
-                      .then(([airlineImages, blogImages]) => setImageLibrary([...new Set([...airlineImages, ...blogImages])]))
-                      .catch(error => setStatusMessage(error instanceof Error ? error.message : 'Image library refresh failed.'));
+                    void refreshImageLibrary();
                   }}
                   className="mt-3 text-[11px] font-semibold text-sky-600 hover:underline dark:text-sky-400"
                 >
@@ -2562,6 +2681,7 @@ export default function App() {
         onClose={() => setIsManageModalOpen(false)}
         airlines={airlines}
         onSave={(updated) => setAirlines(updated)}
+        entityLabel={blogType === 'airlines' ? 'Airline' : blogType === 'hotels' ? 'Hotel' : blogType === 'travel' ? 'Travel Entry' : 'Client'}
       />
 
       {/* Google Refresh Token Modal */}

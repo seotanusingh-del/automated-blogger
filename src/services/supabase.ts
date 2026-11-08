@@ -17,9 +17,11 @@ export async function listPublicBucketImages(prefix = ''): Promise<string[]> {
   }
   const { data, error } = await supabase.storage.from(IMAGE_BUCKET).list(prefix, { limit: 100, sortBy: { column: 'name', order: 'asc' } });
   if (!error) {
-    return (data || [])
-      .filter(file => !!file.name && /\.(avif|gif|jpe?g|png|webp)$/i.test(file.name))
-      .map(file => `${SUPABASE_PUBLIC_URL}/storage/v1/object/public/${IMAGE_BUCKET}/${prefix ? `${prefix}/` : ''}${encodeURIComponent(file.name)}`);
+    const files = (data || []).filter(file => !!file.name && /\.(avif|gif|jpe?g|png|webp)$/i.test(file.name));
+    const directImages = files.map(file => `${SUPABASE_PUBLIC_URL}/storage/v1/object/public/${IMAGE_BUCKET}/${prefix ? `${prefix}/` : ''}${file.name.split('/').map(encodeURIComponent).join('/')}`);
+    const folders = (data || []).filter(file => !!file.name && !file.id && !/\./.test(file.name)).slice(0, 25);
+    const nestedImages = await Promise.all(folders.map(folder => listPublicBucketImages(prefix ? `${prefix}/${folder.name}` : folder.name).catch(() => [])));
+    return [...directImages, ...nestedImages.flat()];
   }
   return listImagesThroughApi(prefix);
 }
