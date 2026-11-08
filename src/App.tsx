@@ -80,6 +80,8 @@ type BlogType = 'airlines' | 'travel' | 'hotels' | 'agency';
 const N8N_BLOG_WEBHOOK = 'https://automated-blogger.app.n8n.cloud/webhook/seo-blog-generator';
 import {
   getRecentPosts,
+  getBlogTableDrafts,
+  StoredBlogDraft,
   listPublicBucketImages,
   savePostToSupabase,
   uploadImageToPublicBucket
@@ -180,11 +182,12 @@ export default function App() {
 
   // Persistent Airlines
   const [airlines, setAirlines] = useState<AirlineItem[]>(() => {
-    const saved = localStorage.getItem('easyflight_airlines');
+    const savedBlogType = localStorage.getItem('easyflight_blog_type') || 'airlines';
+    const saved = localStorage.getItem(`easyflight_entities_${savedBlogType}`) || (savedBlogType === 'airlines' ? localStorage.getItem('easyflight_airlines') : null);
     if (saved) {
       try { return JSON.parse(saved); } catch (e) { /* ignore */ }
     }
-    return DEFAULT_AIRLINES;
+    return savedBlogType === 'airlines' ? DEFAULT_AIRLINES : [];
   });
 
   const [isManageModalOpen, setIsManageModalOpen] = useState(false);
@@ -198,6 +201,8 @@ export default function App() {
   const [savedTemplates, setSavedTemplates] = useState<SavedTemplate[]>(() => {
     try { return JSON.parse(localStorage.getItem('easyflight_saved_templates') || '[]'); } catch { return []; }
   });
+  const [supabaseDrafts, setSupabaseDrafts] = useState<SavedTemplate[]>([]);
+  const [isLoadingSupabaseDrafts, setIsLoadingSupabaseDrafts] = useState(false);
 
   // Queue & Review State (Hydrates compact storage or full draft)
   const [generatedPosts, setGeneratedPosts] = useState<GeneratedPost[]>(() => {
@@ -351,7 +356,8 @@ export default function App() {
   // Safely persist airlines to localStorage
   useEffect(() => {
     try {
-      localStorage.setItem('easyflight_airlines', JSON.stringify(airlines));
+      localStorage.setItem(`easyflight_entities_${blogType}`, JSON.stringify(airlines));
+      if (blogType === 'airlines') localStorage.setItem('easyflight_airlines', JSON.stringify(airlines));
     } catch (e) {
       console.warn('Could not save airlines to localStorage:', e);
     }
@@ -380,6 +386,41 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('easyflight_saved_templates', JSON.stringify(savedTemplates));
   }, [savedTemplates]);
+
+  const refreshSupabaseDrafts = async () => {
+    setIsLoadingSupabaseDrafts(true);
+    try {
+      const rows = await getBlogTableDrafts();
+      setSupabaseDrafts(rows.map((row: StoredBlogDraft, index) => {
+        const title = String(row.title || row.keyword || `Saved blog ${index + 1}`);
+        const htmlContent = String(row.content_html || row.html_content || row.content || '');
+        return {
+          id: `supabase-blog-${row.id || index}`,
+          templateName: title,
+          airlineName: String(row.airline_name || row.brand || companyName || 'Saved blog'),
+          officeName: String(row.office_name || 'Saved draft'),
+          city: String(row.city || 'Online'),
+          country: String(row.country || ''),
+          title,
+          slug: title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''),
+          tfnNumber: commonTfn,
+          keyword: String(row.keyword || targetKeyword),
+          htmlContent,
+          imageUrl: String(row.banner_url || row.image_url || ''),
+          status: 'Draft' as const,
+          labels: [],
+          socialLinks,
+          isAiGenerated: true
+        };
+      }).filter(draft => draft.htmlContent.trim().length > 0));
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : 'Supabase drafts could not be loaded.');
+    } finally {
+      setIsLoadingSupabaseDrafts(false);
+    }
+  };
+
+  useEffect(() => { void refreshSupabaseDrafts(); }, []);
 
   // 10-Minute Inactivity Activity Tracker
   useEffect(() => {
@@ -521,16 +562,19 @@ export default function App() {
   const selectedAirlines = airlines.filter((a: AirlineItem) => a.selected);
 
   const handleBlogTypeChange = (nextType: BlogType) => {
+    if (nextType === blogType) return;
     setBlogType(nextType);
     localStorage.setItem('easyflight_blog_type', nextType);
-    if (nextType !== 'airlines') {
-      setAirlines([]);
-      setAirlineFilter('');
-      setStatusMessage(`Add your ${nextType === 'hotels' ? 'hotels' : nextType === 'travel' ? 'travel entries' : 'client entries'} in Step 2 using Manage.`);
-    } else if (airlines.length === 0) {
-      setAirlines(DEFAULT_AIRLINES);
-      setStatusMessage('Default airline and office entries restored.');
+    const saved = localStorage.getItem(`easyflight_entities_${nextType}`);
+    if (saved) {
+      try { setAirlines(JSON.parse(saved)); } catch { setAirlines([]); }
+    } else {
+      setAirlines(nextType === 'airlines' ? DEFAULT_AIRLINES : []);
     }
+    setAirlineFilter('');
+    setStatusMessage(nextType === 'airlines'
+      ? 'Airline workspace loaded.'
+      : `New ${nextType} workspace started. Add entries in Step 2 using Manage.`);
   };
 
   const addCustomImages = async (files: FileList | File[]) => {
@@ -579,7 +623,7 @@ export default function App() {
     const template: SavedTemplate = {
       ...activePost,
       id: `template-${Date.now()}`,
-      status: 'Draft',
+      status: 'Draft' as const,
       templateName: name.trim()
     };
     setSavedTemplates(current => [template, ...current.filter(item => item.templateName !== template.templateName)]);
@@ -601,6 +645,46 @@ export default function App() {
     setStatusMessage('Draft template added to the review queue.');
   };
 
+  const applySourceToSelectedEntries = (source: SavedTemplate) => {
+    const entries = selectedAirlines;
+    if (!entries.length) {
+      setStatusMessage('Select at least one Step 2 entry first.');
+      setActiveSection('airlines');
+      return;
+    }
+    const queue: GeneratedPost[] = [];
+    entries.forEach((entry, entryIndex) => {
+      const offices = entry.offices.length ? entry.offices : [{
+        id: `${entry.id}-draft`,
+        name: `${entry.name} location`,
+        city: 'Online',
+        country: 'Worldwide'
+      }];
+      offices.forEach((office, officeIndex) => {
+        const imageUrl = source.imageUrl || customImages[(entryIndex + officeIndex) % Math.max(customImages.length, 1)] || generateOfficeBannerSvg(entry.name, office.name, office.city, commonTfn, isDarkMode ? 'dark' : 'light', companyName, companyLogoUrl, socialLinks.website);
+        queue.push({
+          ...source,
+          id: `draft-${Date.now()}-${entryIndex}-${officeIndex}`,
+          airlineName: entry.name,
+          officeName: office.name,
+          city: office.city,
+          country: office.country,
+          title: source.title.replace(/\{\{(entry|airline|brand)\}\}/gi, entry.name),
+          keyword: source.keyword || targetKeyword,
+          imageUrl,
+          htmlContent: source.htmlContent.replace(/\{\{(entry|airline|brand)\}\}/gi, entry.name),
+          status: 'Draft',
+          publishedUrl: undefined,
+          verified: false
+        });
+      });
+    });
+    setGeneratedPosts(queue);
+    setCurrentPostIndex(0);
+    setActiveSection('review');
+    setStatusMessage(`Created ${queue.length} drafts from "${source.templateName || source.title}".`);
+  };
+
   const updateDraftField = (id: string, field: 'title' | 'keyword' | 'htmlContent' | 'status', value: string) => {
     setGeneratedPosts(posts => posts.map(post => post.id === id ? { ...post, [field]: value } : post));
   };
@@ -611,11 +695,12 @@ export default function App() {
   };
 
   const createBlankDraft = () => {
-    const airline = selectedAirlines[0] || airlines[0];
-    if (!airline) {
-      setStatusMessage('Add an airline before creating a draft.');
-      return;
-    }
+    const airline = selectedAirlines[0] || airlines[0] || {
+      id: `custom-${Date.now()}`,
+      name: companyName.trim() || (blogType === 'hotels' ? 'Hotel' : blogType === 'travel' ? 'Travel Brand' : 'SEO Client'),
+      offices: [],
+      selected: true
+    };
     const office = airline.offices[0] || {
       id: `${airline.id}-draft`,
       name: `${airline.name} Office`,
@@ -628,6 +713,42 @@ export default function App() {
     setCurrentPostIndex(generatedPosts.length);
     setActiveSection('drafts');
     setStatusMessage('Blank editable draft added to the review queue.');
+  };
+
+  const createTemplateFromScratch = () => {
+    const airline = selectedAirlines[0] || airlines[0] || {
+      id: `template-entry-${Date.now()}`,
+      name: companyName.trim() || (blogType === 'hotels' ? 'Hotel Template' : blogType === 'travel' ? 'Travel Template' : 'Client Template'),
+      offices: [],
+      selected: true
+    };
+    const office = airline.offices[0] || {
+      id: `${airline.id}-template`,
+      name: `${airline.name} location`,
+      city: 'Your City',
+      country: 'Your Country'
+    };
+    const draft = generateOfficeBlogPost(
+      airline,
+      office,
+      targetKeyword || 'Your target blog topic',
+      commonTfn,
+      customImages[0],
+      socialLinks,
+      isDarkMode ? 'dark' : 'light',
+      companyName,
+      companyLogoUrl,
+      socialLinks.website
+    );
+    draft.status = 'Draft';
+    const templateName = prompt('Name your new reusable template:', `${blogType} content template`);
+    if (!templateName?.trim()) return;
+    const template: SavedTemplate = { ...draft, id: `template-${Date.now()}`, templateName: templateName.trim() };
+    setSavedTemplates(current => [template, ...current.filter(item => item.templateName !== template.templateName)]);
+    setGeneratedPosts(current => [...current, draft]);
+    setCurrentPostIndex(generatedPosts.length);
+    setActiveSection('drafts');
+    setStatusMessage(`Template "${template.templateName}" created. Edit its draft content, then reuse it from this panel.`);
   };
 
   // Bulk Post Generator
@@ -1850,6 +1971,20 @@ export default function App() {
                 </button>
                 <button
                   type="button"
+                  onClick={() => {
+                    if (!selectedAirlines.length) {
+                      setStatusMessage('Select at least one entry before choosing a draft or template.');
+                      return;
+                    }
+                    setActiveSection('drafts');
+                  }}
+                  disabled={selectedAirlines.length === 0}
+                  className="px-3 py-2.5 rounded-xl border border-slate-300 text-slate-700 dark:border-slate-700 dark:text-slate-200 text-xs font-bold transition disabled:opacity-50 flex-1 justify-center"
+                >
+                  From drafts &amp; templates
+                </button>
+                <button
+                  type="button"
                   onClick={handleGenerateWithWorkflow}
                   disabled={isGeneratingBulk || selectedAirlines.length === 0}
                   className="px-3 py-2.5 rounded-xl border border-violet-300 bg-violet-500/10 text-violet-700 dark:text-violet-300 text-xs font-bold transition disabled:opacity-50 flex-1 justify-center"
@@ -1935,6 +2070,7 @@ export default function App() {
                   <div className="flex flex-wrap gap-2">
                     <span className="rounded-lg bg-slate-500/10 px-2.5 py-1.5 text-[11px] font-semibold text-slate-500">{generatedPosts.filter(post => post.status === 'Draft').length} drafts · {savedTemplates.length} templates</span>
                     <button type="button" onClick={createBlankDraft} className="rounded-lg border border-slate-300 px-2.5 py-1.5 text-[11px] font-semibold dark:border-slate-700"><Plus className="mr-1 inline h-3 w-3" />New draft</button>
+                    <button type="button" onClick={createTemplateFromScratch} className="rounded-lg border border-violet-300 px-2.5 py-1.5 text-[11px] font-semibold text-violet-700 dark:text-violet-300"><Plus className="mr-1 inline h-3 w-3" />New template</button>
                     <button type="button" onClick={saveActiveAsTemplate} disabled={!activePost} className="rounded-lg bg-sky-600 px-2.5 py-1.5 text-[11px] font-semibold text-white disabled:opacity-50">Save active template</button>
                   </div>
                 </div>
@@ -1987,6 +2123,29 @@ export default function App() {
                       </div>
                     ))}
                   </div> : <p className="mt-2 rounded-lg bg-slate-500/10 p-3 text-[11px] text-slate-500">No reusable templates yet. Select any draft, edit its HTML, then choose “Save active template”.</p>}
+                </div>
+                <div className="mt-3 rounded-xl border p-3 dark:border-slate-800">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <p className="text-[11px] font-black uppercase tracking-wide text-slate-500">n8n / Supabase drafts</p>
+                      <p className="text-[11px] text-slate-500">Preview and reuse drafts saved by the n8n workflow in the <code>blog</code> table.</p>
+                    </div>
+                    <button type="button" onClick={() => { void refreshSupabaseDrafts(); }} className="rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold">
+                      {isLoadingSupabaseDrafts ? 'Loading...' : 'Refresh drafts'}
+                    </button>
+                  </div>
+                  {supabaseDrafts.length > 0 ? <div className="mt-2 grid gap-2 md:grid-cols-2">
+                    {supabaseDrafts.map(draft => (
+                      <div key={draft.id} className="rounded-lg border border-slate-200 bg-white p-3 text-[11px] dark:border-slate-800 dark:bg-slate-900">
+                        <p className="truncate font-bold">{draft.title}</p>
+                        <p className="mt-1 truncate text-slate-500">{draft.keyword}</p>
+                        <div className="mt-2 flex gap-3">
+                          <button type="button" onClick={() => applySourceToSelectedEntries(draft)} className="font-semibold text-sky-600 hover:underline">Use for selected</button>
+                          <button type="button" onClick={() => { setGeneratedPosts(current => [...current, { ...draft, id: `draft-${Date.now()}`, status: 'Draft' }]); setStatusMessage('Supabase draft added to the local draft manager.'); }} className="font-semibold text-emerald-600 hover:underline">Add to drafts</button>
+                        </div>
+                      </div>
+                    ))}
+                  </div> : <p className="mt-2 rounded-lg bg-slate-500/10 p-3 text-[11px] text-slate-500">No rows with article HTML were found in the <code>blog</code> table.</p>}
                 </div>
               </div>
 

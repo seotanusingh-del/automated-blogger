@@ -70,6 +70,34 @@ export interface StoredPost {
   created_at?: string;
 }
 
+export interface StoredBlogDraft {
+  id: string;
+  title?: string;
+  keyword?: string;
+  content?: string;
+  content_html?: string;
+  html_content?: string;
+  banner_url?: string;
+  image_url?: string;
+  status?: string;
+  created_at?: string;
+  [key: string]: unknown;
+}
+
+export async function getBlogTableDrafts(limit = 100): Promise<StoredBlogDraft[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from('blog')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (error) {
+    console.error('Could not load drafts from Supabase blog table:', error);
+    throw new Error(`Supabase blog drafts could not be loaded: ${error.message}`);
+  }
+  return (data || []) as StoredBlogDraft[];
+}
+
 /**
  * Save a generated post to Supabase for future reference/variations
  */
