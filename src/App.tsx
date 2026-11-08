@@ -203,6 +203,8 @@ export default function App() {
   });
   const [supabaseDrafts, setSupabaseDrafts] = useState<SavedTemplate[]>([]);
   const [isLoadingSupabaseDrafts, setIsLoadingSupabaseDrafts] = useState(false);
+  const [showDraftPicker, setShowDraftPicker] = useState(false);
+  const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null);
 
   // Queue & Review State (Hydrates compact storage or full draft)
   const [generatedPosts, setGeneratedPosts] = useState<GeneratedPost[]>(() => {
@@ -282,9 +284,13 @@ export default function App() {
   });
   const copyHistoryLinks = () => {
     const selected = filteredHistoryPosts.filter(post => selectedHistoryIds.includes(post.id));
-    const posts = selected.length ? selected : filteredHistoryPosts;
-    void navigator.clipboard.writeText(posts.map(post => post.publishedUrl || post.title).join('\n'));
-    setStatusMessage(`${posts.length} history items copied.`);
+    const posts = (selected.length ? selected : filteredHistoryPosts).filter(post => post.publishedUrl);
+    if (!posts.length) {
+      setStatusMessage('No published URL links are available to copy.');
+      return;
+    }
+    void navigator.clipboard.writeText(posts.map(post => post.publishedUrl as string).join('\n'));
+    setStatusMessage(`${posts.length} published URL link${posts.length === 1 ? '' : 's'} copied.`);
   };
   const exportHistory = () => {
     const selected = filteredHistoryPosts.filter(post => selectedHistoryIds.includes(post.id));
@@ -361,7 +367,7 @@ export default function App() {
     } catch (e) {
       console.warn('Could not save airlines to localStorage:', e);
     }
-  }, [airlines]);
+  }, [airlines, blogType]);
 
   useEffect(() => {
     try { localStorage.setItem('easyflight_custom_images', JSON.stringify(customImages.filter(url => !url.startsWith('data:')))); }
@@ -393,7 +399,10 @@ export default function App() {
       const rows = await getBlogTableDrafts();
       setSupabaseDrafts(rows.map((row: StoredBlogDraft, index) => {
         const title = String(row.title || row.keyword || `Saved blog ${index + 1}`);
-        const htmlContent = String(row.content_html || row.html_content || row.content || '');
+        const htmlContent = String(
+          row.content_html || row.html_content || row.content || row.article_html ||
+          row.blog_content || row.article || row.body || ''
+        );
         return {
           id: `supabase-blog-${row.id || index}`,
           templateName: title,
@@ -560,6 +569,9 @@ export default function App() {
   };
 
   const selectedAirlines = airlines.filter((a: AirlineItem) => a.selected);
+  const entryLabel = blogType === 'airlines' ? 'Airline' : blogType === 'hotels' ? 'Hotel' : blogType === 'travel' ? 'Travel entry' : 'Client';
+  const entryLabelPlural = blogType === 'airlines' ? 'Airlines' : blogType === 'hotels' ? 'Hotels' : blogType === 'travel' ? 'Travel entries' : 'Client entries';
+  const availableDraftSources = [...savedTemplates, ...supabaseDrafts];
 
   const handleBlogTypeChange = (nextType: BlogType) => {
     if (nextType === blogType) return;
@@ -572,6 +584,8 @@ export default function App() {
       setAirlines(nextType === 'airlines' ? DEFAULT_AIRLINES : []);
     }
     setAirlineFilter('');
+    setGeneratedPosts([]);
+    setCurrentPostIndex(0);
     setStatusMessage(nextType === 'airlines'
       ? 'Airline workspace loaded.'
       : `New ${nextType} workspace started. Add entries in Step 2 using Manage.`);
@@ -646,7 +660,7 @@ export default function App() {
   };
 
   const applySourceToSelectedEntries = (source: SavedTemplate) => {
-    const entries = selectedAirlines;
+    const entries = selectedAirlines.length ? selectedAirlines : airlines;
     if (!entries.length) {
       setStatusMessage('Select at least one Step 2 entry first.');
       setActiveSection('airlines');
@@ -683,6 +697,26 @@ export default function App() {
     setCurrentPostIndex(0);
     setActiveSection('review');
     setStatusMessage(`Created ${queue.length} drafts from "${source.templateName || source.title}".`);
+  };
+
+  const openDraftPicker = () => {
+    if (!availableDraftSources.length) {
+      setActiveSection('drafts');
+      setStatusMessage('Create a template or refresh Supabase drafts first.');
+      return;
+    }
+    setSelectedSourceId(availableDraftSources[0].id);
+    setShowDraftPicker(true);
+  };
+
+  const generateFromSelectedSource = () => {
+    const source = availableDraftSources.find(item => item.id === selectedSourceId);
+    if (!source) {
+      setStatusMessage('Select a draft or template first.');
+      return;
+    }
+    setShowDraftPicker(false);
+    applySourceToSelectedEntries(source);
   };
 
   const updateDraftField = (id: string, field: 'title' | 'keyword' | 'htmlContent' | 'status', value: string) => {
@@ -820,7 +854,7 @@ export default function App() {
       const content = String(payload.content_html || payload.content || payload.html || '');
       if (!content) throw new Error('Workflow returned no article HTML.');
       const banner = String(payload.banner_url || payload.image_url || customImages[0] || '');
-      const entries = selectedAirlines.length > 0 ? selectedAirlines : airlines;
+        const entries = selectedAirlines.length > 0 ? selectedAirlines : airlines;
       if (!entries.length) throw new Error('Add and select at least one entry in Step 2 before running the workflow.');
       const queue: GeneratedPost[] = [];
       entries.forEach((entry, entryIndex) => {
@@ -1706,7 +1740,7 @@ export default function App() {
         <nav className="space-y-1 text-xs font-semibold">
           {([
             ['setup', '1. Setup & branding'],
-            ['airlines', '2. Airlines'],
+            ['airlines', `2. ${entryLabelPlural}`],
             ['drafts', '3. Drafts & templates'],
             ['review', '4. Review & publish'],
             ['history', '5. History & export']
@@ -1880,7 +1914,7 @@ export default function App() {
             <div className={`${activeSection === 'airlines' ? '' : 'hidden'} pt-3 border-t space-y-3 ${isDarkMode ? 'border-slate-800' : 'border-slate-200'}`}>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold">Select Airlines</span>
+                  <span className="text-xs font-bold">Select {entryLabelPlural}</span>
                   <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-500/20">
                     {selectedAirlines.length} / {airlines.length} selected
                   </span>
@@ -1900,7 +1934,7 @@ export default function App() {
                 <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
                 <input
                   type="text"
-                  placeholder="Quick filter airlines..."
+                  placeholder={`Quick filter ${entryLabelPlural.toLowerCase()}...`}
                   value={airlineFilter}
                   onChange={(e) => setAirlineFilter(e.target.value)}
                   className={`w-full text-xs rounded-lg pl-8 pr-3 py-2 border outline-none ${
@@ -1930,7 +1964,7 @@ export default function App() {
                     />
                     <div className="truncate flex-1">
                       <span className="font-medium truncate block">{airline.name}</span>
-                      <span className="text-[10px] text-slate-500">{airline.offices.length} offices</span>
+                      <span className="text-[10px] text-slate-500">{airline.offices.length} locations</span>
                     </div>
                   </label>
                 ))}
@@ -1945,12 +1979,12 @@ export default function App() {
                   }`}
                 >
                   <Settings className="w-3.5 h-3.5" />
-                  Manage {blogType === 'airlines' ? 'Airlines' : blogType === 'hotels' ? 'Hotels' : blogType === 'travel' ? 'Travel entries' : 'Client entries'} ({airlines.length})
+                  Manage {entryLabelPlural} ({airlines.length})
                 </button>
 
                 <button
                   onClick={handleGenerateBulkPosts}
-                  disabled={isGeneratingBulk || selectedAirlines.length === 0}
+                  disabled={isGeneratingBulk}
                   className={`px-3 py-2.5 rounded-xl border font-semibold text-xs transition flex items-center gap-1.5 flex-1 justify-center ${
                     isDarkMode ? 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700' : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-300'
                   }`}
@@ -1971,14 +2005,7 @@ export default function App() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => {
-                    if (!selectedAirlines.length) {
-                      setStatusMessage('Select at least one entry before choosing a draft or template.');
-                      return;
-                    }
-                    setActiveSection('drafts');
-                  }}
-                  disabled={selectedAirlines.length === 0}
+                  onClick={openDraftPicker}
                   className="px-3 py-2.5 rounded-xl border border-slate-300 text-slate-700 dark:border-slate-700 dark:text-slate-200 text-xs font-bold transition disabled:opacity-50 flex-1 justify-center"
                 >
                   From drafts &amp; templates
@@ -1986,7 +2013,7 @@ export default function App() {
                 <button
                   type="button"
                   onClick={handleGenerateWithWorkflow}
-                  disabled={isGeneratingBulk || selectedAirlines.length === 0}
+                  disabled={isGeneratingBulk}
                   className="px-3 py-2.5 rounded-xl border border-violet-300 bg-violet-500/10 text-violet-700 dark:text-violet-300 text-xs font-bold transition disabled:opacity-50 flex-1 justify-center"
                   title="Send keyword, topic, company, email, TFN and SEO requirements to n8n"
                 >
@@ -2044,7 +2071,7 @@ export default function App() {
                     </div>
                   </>
                 )}
-                {isLoadingImageLibrary && <p className="mt-3 text-[11px] text-sky-600 dark:text-sky-400">Loading images from DATA/Airlines and DATA/Blog...</p>}
+                {isLoadingImageLibrary && <p className="mt-3 text-[11px] text-sky-600 dark:text-sky-400">Loading images from the public DATA library...</p>}
                 {imageLibrary.length === 0 && !isUploadingImages && !isLoadingImageLibrary && (
                   <p className="mt-3 rounded-lg bg-amber-500/10 p-2 text-[11px] text-amber-700 dark:text-amber-300">
                     No public images were returned. Configure the Supabase anon key for listing or use Upload images.
@@ -2158,7 +2185,7 @@ export default function App() {
             <div><h2 className="text-lg font-black">Logs, status & history</h2><p className="text-xs text-slate-500">Filter, select, copy links, or export your workflow records.</p></div>
             <div className="flex gap-2">
               <button type="button" onClick={() => setSelectedHistoryIds(filteredHistoryPosts.map(post => post.id))} className="rounded-lg border px-3 py-2 text-[11px] font-semibold">Select all</button>
-              <button type="button" onClick={copyHistoryLinks} className="rounded-lg border px-3 py-2 text-[11px] font-semibold">Copy links</button>
+              <button type="button" onClick={copyHistoryLinks} className="rounded-lg border px-3 py-2 text-[11px] font-semibold">Copy published URLs</button>
               <button type="button" onClick={exportHistory} className="rounded-lg bg-sky-600 px-3 py-2 text-[11px] font-bold text-white">Export CSV</button>
             </div>
           </div>
@@ -2174,7 +2201,7 @@ export default function App() {
               <span className="rounded-full bg-sky-500/10 px-2 py-1 text-[10px] font-bold text-sky-600">{post.status}</span>
               {post.publishedUrl && <>
                 <a href={post.publishedUrl} target="_blank" rel="noreferrer" className="text-sky-600 hover:underline">Open</a>
-                <button type="button" onClick={() => { void navigator.clipboard.writeText(post.publishedUrl || ''); setStatusMessage('Published link copied.'); }} className="text-sky-600 hover:underline">Copy</button>
+                <button type="button" onClick={() => { void navigator.clipboard.writeText(post.publishedUrl || ''); setStatusMessage('Live URL copied.'); }} className="text-sky-600 hover:underline">Copy live URL</button>
               </>}
             </label>)}
             {!filteredHistoryPosts.length && <p className="rounded-lg bg-slate-500/10 p-4 text-xs text-slate-500">No matching history items.</p>}
@@ -2834,13 +2861,42 @@ export default function App() {
         </div>
       )}
 
+      {showDraftPicker && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/60 p-4" role="dialog" aria-modal="true" aria-label="Choose a draft or template">
+          <div className={`w-full max-w-lg rounded-2xl border p-5 shadow-2xl ${isDarkMode ? 'border-slate-800 bg-slate-900' : 'border-slate-200 bg-white'}`}>
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-sm font-black">Choose a draft or template</h2>
+                <p className="mt-1 text-[11px] text-slate-500">The selected content will be adapted for your Step 2 entries.</p>
+              </div>
+              <button type="button" onClick={() => setShowDraftPicker(false)} className="rounded-lg border px-2 py-1 text-xs">×</button>
+            </div>
+            <div className="mt-4 max-h-64 space-y-2 overflow-y-auto">
+              {availableDraftSources.map(source => (
+                <label key={source.id} className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 ${selectedSourceId === source.id ? 'border-sky-500 bg-sky-500/10' : 'border-slate-200 dark:border-slate-800'}`}>
+                  <input type="radio" name="draft-source" checked={selectedSourceId === source.id} onChange={() => setSelectedSourceId(source.id)} className="mt-1" />
+                  <span className="min-w-0">
+                    <span className="block truncate text-xs font-bold">{source.templateName || source.title || 'Untitled draft'}</span>
+                    <span className="mt-1 block truncate text-[11px] text-slate-500">{source.keyword || 'No keyword'} · {source.isAiGenerated ? 'n8n/Supabase' : 'Local'}</span>
+                  </span>
+                </label>
+              ))}
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button type="button" onClick={() => { setShowDraftPicker(false); setActiveSection('drafts'); }} className="rounded-lg border px-3 py-2 text-[11px] font-semibold">Manage drafts</button>
+              <button type="button" onClick={generateFromSelectedSource} disabled={!selectedSourceId} className="rounded-lg bg-sky-600 px-3 py-2 text-[11px] font-bold text-white disabled:opacity-50">Generate content</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Airline Manager Modal */}
       <AirlineManagerModal
         isOpen={isManageModalOpen}
         onClose={() => setIsManageModalOpen(false)}
         airlines={airlines}
         onSave={(updated) => setAirlines(updated)}
-        entityLabel={blogType === 'airlines' ? 'Airline' : blogType === 'hotels' ? 'Hotel' : blogType === 'travel' ? 'Travel Entry' : 'Client'}
+        entityLabel={entryLabel}
       />
 
       {/* Google Refresh Token Modal */}

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Trash2, Plus, ChevronDown, ChevronUp, MapPin, X, RotateCcw, Check } from 'lucide-react';
 import { AirlineItem, AirlineOffice } from '../types/airline';
 import { DEFAULT_AIRLINES } from '../data/defaultAirlines';
@@ -24,6 +24,11 @@ export const AirlineManagerModal: React.FC<AirlineManagerModalProps> = ({
   const [newOfficeCity, setNewOfficeCity] = useState('');
   const [newOfficeName, setNewOfficeName] = useState('');
   const [newOfficeCountry, setNewOfficeCountry] = useState('United States');
+
+  useEffect(() => {
+    setAirlineList(airlines);
+    setExpandedAirlineId(null);
+  }, [airlines]);
 
   if (!isOpen) return null;
 
@@ -104,7 +109,7 @@ export const AirlineManagerModal: React.FC<AirlineManagerModalProps> = ({
               {entityLabel} Manager ({airlineList.length} {entityLabel}s)
             </h2>
             <p className="text-xs text-slate-400">
-              Manage entries and their associated locations.
+              Add and manage {entityLabel.toLowerCase()} entries and their associated locations.
             </p>
           </div>
           <button
@@ -131,7 +136,7 @@ export const AirlineManagerModal: React.FC<AirlineManagerModalProps> = ({
                   >
                     <span className="text-xs font-semibold text-slate-100">{airline.name}</span>
                     <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-sky-500/10 text-sky-400 border border-sky-500/20">
-                      {airline.offices.length} Offices
+                      {airline.offices.length} Locations
                     </span>
                     {isExpanded ? (
                       <ChevronUp className="w-3.5 h-3.5 text-slate-400 ml-auto mr-2" />
@@ -153,7 +158,7 @@ export const AirlineManagerModal: React.FC<AirlineManagerModalProps> = ({
                 {isExpanded && (
                   <div className="p-3 bg-slate-900/60 border-t border-slate-800/80 space-y-3">
                     <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wide">
-                      Offices under {airline.name}:
+                      Locations under {airline.name}:
                     </div>
 
                     <div className="space-y-1.5 max-h-40 overflow-y-auto">
@@ -181,14 +186,14 @@ export const AirlineManagerModal: React.FC<AirlineManagerModalProps> = ({
                     <div className="pt-2 border-t border-slate-800 flex flex-wrap items-center gap-2">
                       <input
                         type="text"
-                        placeholder="City (e.g. Bozeman)"
+                        placeholder="City or location"
                         value={newOfficeCity}
                         onChange={(e) => setNewOfficeCity(e.target.value)}
                         className="text-xs bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-white flex-1 min-w-[120px] outline-none"
                       />
                       <input
                         type="text"
-                        placeholder="Country (e.g. United States)"
+                        placeholder="Country or region"
                         value={newOfficeCountry}
                         onChange={(e) => setNewOfficeCountry(e.target.value)}
                         className="text-xs bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-white flex-1 min-w-[120px] outline-none"
@@ -232,6 +237,7 @@ export const AirlineManagerModal: React.FC<AirlineManagerModalProps> = ({
             <div className="flex items-center gap-2">
               <button
                 onClick={handleResetDefaults}
+                style={{ display: entityLabel === 'Airline' ? undefined : 'none' }}
                 className="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold flex items-center gap-1.5 border border-slate-700 transition"
               >
                 <RotateCcw className="w-3.5 h-3.5" /> Reset to Defaults
