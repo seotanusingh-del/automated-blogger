@@ -65,8 +65,6 @@ import { RefreshTokenModal } from './components/RefreshTokenModal';
 import { PublicLandingPage } from './components/PublicLandingPage';
 import { 
   generateDeepSeekContent, 
-  generateFreeAiImageUrl, 
-  generatePollinationsImageUrl,
   BlogPostContent, 
   getDeepSeekApiKey, 
   setDeepSeekApiKey,
@@ -569,21 +567,8 @@ export default function App() {
         aiProvider
       );
 
-      // 3. Generate Free AI Image with Pollinations
-      let aiImageUrl = customImages[index % Math.max(customImages.length, 1)];
-      if (!aiImageUrl) {
-        try {
-          aiImageUrl = await generatePollinationsImageUrl(
-            `${post.keyword} ${post.airlineName} ${post.city} traveler support editorial photography`
-          );
-        } catch (imageError) {
-          console.warn('Pollinations image generation failed; using safe fallback URL:', imageError);
-          aiImageUrl = generateFreeAiImageUrl(
-            `${post.keyword} ${post.airlineName} ${post.city} traveler support editorial photography`,
-            Date.now() + index
-          );
-        }
-      }
+      // Keep imagery deterministic and user-controlled; text providers never create images.
+      const aiImageUrl = customImages[index % Math.max(customImages.length, 1)] || post.imageUrl;
 
       // 4. Update the post sections
       const updatedSections: PostSections = {
@@ -695,20 +680,7 @@ export default function App() {
           aiProvider
         );
 
-        let aiImageUrl = customImages[i % Math.max(customImages.length, 1)];
-        if (!aiImageUrl) {
-          try {
-            aiImageUrl = await generatePollinationsImageUrl(
-              `${post.keyword} ${post.airlineName} ${post.city} traveler support editorial photography`
-            );
-          } catch (imageError) {
-            console.warn('Pollinations image generation failed; using safe fallback URL:', imageError);
-            aiImageUrl = generateFreeAiImageUrl(
-              `${post.keyword} ${post.airlineName} ${post.city} traveler support editorial photography`,
-              Date.now() + i
-            );
-          }
-        }
+        const aiImageUrl = customImages[i % Math.max(customImages.length, 1)] || post.imageUrl;
 
         const updatedSections: PostSections = {
           ...(post.sections || {
@@ -1255,6 +1227,19 @@ export default function App() {
             <span className="font-semibold">{customRefreshToken ? 'Custom Token' : 'Google Token'}</span>
           </button>
 
+          <a
+            href="https://seo-indexer-tool.vercel.app/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition ${
+              isDarkMode ? 'border-sky-800 bg-sky-950/30 text-sky-300 hover:bg-sky-950/60' : 'border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100'
+            }`}
+            title="Open Blogger Indexer"
+          >
+            <ExternalLink className="h-3.5 w-3.5" />
+            Blogger Indexer
+          </a>
+
           {/* Publish Secret Config Button */}
           <button
             onClick={() => {
@@ -1285,6 +1270,7 @@ export default function App() {
 
           {/* AI Provider Config Button */}
           <button
+            id="ai-settings"
             onClick={() => {
               const provider = (prompt('Choose AI provider: deepseek or gemini', aiProvider) || aiProvider).toLowerCase() === 'gemini' ? 'gemini' : 'deepseek';
               const key = prompt(provider === 'gemini' ? 'Enter Gemini API key (stored only in this browser)' : 'Enter DeepSeek API key (stored only in this browser)', provider === 'gemini' ? geminiKey : deepSeekKey);
@@ -1302,7 +1288,7 @@ export default function App() {
                 ? (isDarkMode ? 'bg-sky-950/20 border-sky-800 text-sky-400' : 'bg-sky-50 border-sky-200 text-sky-600')
                 : (isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-white border-slate-300 text-slate-700')
             }`}
-            title="Configure DeepSeek or Gemini API key"
+            title="Configure AI provider API key"
           >
             <Sparkles className="w-3.5 h-3.5" />
             <span className="font-semibold">{(aiProvider === 'gemini' ? geminiKey : deepSeekKey) ? `${aiProvider} ready` : 'Set AI Key'}</span>
@@ -1360,11 +1346,28 @@ export default function App() {
         </div>
       )}
 
-      {/* Main Workspace */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-5 grid grid-cols-1 lg:grid-cols-12 gap-6">
+      {/* Settings and related tools remain available without crowding the header. */}
+      <aside className={`hidden lg:block fixed left-0 top-[57px] bottom-0 z-30 w-52 border-r p-4 ${
+        isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
+      }`}>
+        <p className="mb-3 px-2 text-[10px] font-black uppercase tracking-wider text-slate-500">Workspace</p>
+        <nav className="space-y-1 text-xs font-semibold">
+      <a href="#workspace-controls" className="block rounded-lg px-3 py-2 hover:bg-sky-500/10 hover:text-sky-500">Blog setup</a>
+      <a href="#review-queue" className="block rounded-lg px-3 py-2 hover:bg-sky-500/10 hover:text-sky-500">Review queue</a>
+      <a href="#templates" className="block rounded-lg px-3 py-2 hover:bg-sky-500/10 hover:text-sky-500">Draft templates</a>
+        </nav>
+        <p className="mb-3 mt-7 px-2 text-[10px] font-black uppercase tracking-wider text-slate-500">Settings</p>
+        <nav className="space-y-1 text-xs font-semibold">
+      <button onClick={() => setShowRefreshTokenModal(true)} className="block w-full rounded-lg px-3 py-2 text-left hover:bg-sky-500/10 hover:text-sky-500">Google connection</button>
+      <button onClick={() => document.getElementById('ai-settings')?.scrollIntoView({ behavior: 'smooth' })} className="block w-full rounded-lg px-3 py-2 text-left hover:bg-sky-500/10 hover:text-sky-500">AI provider</button>
+      <a href="https://seo-indexer-tool.vercel.app/" target="_blank" rel="noopener noreferrer" className="block rounded-lg px-3 py-2 hover:bg-sky-500/10 hover:text-sky-500">Blogger Indexer <ExternalLink className="ml-1 inline h-3 w-3" /></a>
+        </nav>
+      </aside>
+
+      <main className="flex-1 max-w-7xl w-full mx-auto p-5 lg:pl-60 grid grid-cols-1 lg:grid-cols-12 gap-6">
 
         {/* LEFT COLUMN: Controls, TFN, Keyword, Airline Selector */}
-        <div className="lg:col-span-5 space-y-4">
+        <div id="workspace-controls" className="lg:col-span-5 space-y-4">
           
           <div className={`border rounded-2xl p-5 shadow-sm space-y-4 transition-colors ${
             isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
@@ -1646,7 +1649,7 @@ export default function App() {
         </div>
 
         {/* RIGHT COLUMN: Live Review Studio & Non-Technical Easy Editor */}
-        <div className={`lg:col-span-7 border rounded-2xl p-5 shadow-sm flex flex-col justify-between space-y-4 transition-colors ${
+        <div id="review-queue" className={`lg:col-span-7 border rounded-2xl p-5 shadow-sm flex flex-col justify-between space-y-4 transition-colors ${
           isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
         }`}>
           <div>

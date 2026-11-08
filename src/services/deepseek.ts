@@ -119,35 +119,7 @@ Return valid JSON with this exact structure:
     try { return JSON.parse(cached) as BlogPostContent; } catch { localStorage.removeItem(cachedKey); }
   }
 
-  if (provider === 'gemini') {
-    const geminiKey = getGeminiApiKey();
-    if (!geminiKey) return buildKeywordFallback(airlineName, city, keyword, tfn);
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${encodeURIComponent(geminiKey)}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          generationConfig: { temperature: 0.75, responseMimeType: 'application/json', maxOutputTokens: 1800 },
-          contents: [{ parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }] }]
-        })
-      }
-    );
-    const data = await response.json().catch(() => ({}));
-    if (response.ok) {
-      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-      try {
-        const parsed = JSON.parse(text);
-        if (parsed?.title && parsed?.overview && Array.isArray(parsed.services) && Array.isArray(parsed.faqs)) {
-          localStorage.setItem(cachedKey, JSON.stringify(parsed));
-          return parsed as BlogPostContent;
-        }
-      } catch { /* use the deterministic fallback below */ }
-    }
-    return buildKeywordFallback(airlineName, city, keyword, tfn);
-  }
-
-  // 1. Try calling the backend API proxy first (which uses DEEPSEEK_API_KEY from Vercel / server env)
+  // The backend owns provider selection and automatically falls through to the next available text model.
   try {
     const customKey = getDeepSeekApiKey();
     const res = await fetch('/api/ai/generate', {
@@ -161,7 +133,8 @@ Return valid JSON with this exact structure:
         tfn,
         recentPosts,
         variationSeed: requestVariationSeed,
-        apiKey: customKey || undefined
+        apiKey: provider === 'deepseek' ? (customKey || undefined) : undefined,
+        geminiApiKey: provider === 'gemini' ? (getGeminiApiKey() || undefined) : undefined
       })
     });
 
@@ -181,18 +154,6 @@ Return valid JSON with this exact structure:
       throw new Error('AI service returned incomplete blog content.');
     } else {
       const err = await res.json().catch(() => ({}));
-      // If server is missing DEEPSEEK_API_KEY and client doesn't have one either, prompt user as fallback
-      if (err.code === 'MISSING_AI_KEY' && !customKey) {
-        if (typeof window !== 'undefined') {
-          const entered = window.prompt(
-            'DEEPSEEK_API_KEY is not configured in Vercel environment variables.\n\nEnter your DeepSeek API Key (sk-...) to save locally, or add DEEPSEEK_API_KEY in Vercel to make it automatic:'
-          );
-          if (entered && entered.trim()) {
-            setDeepSeekApiKey(entered.trim());
-            return generateDeepSeekContent(airlineName, city, country, keyword, tfn, recentPosts, requestVariationSeed);
-          }
-        }
-      }
       if (err.error) {
         throw new Error(err.error);
       }

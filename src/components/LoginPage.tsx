@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ArrowRight, CheckCircle2, AlertCircle, Mail, Linkedin, Instagram } from 'lucide-react';
+import { ArrowRight, CheckCircle2, AlertCircle, Mail, Linkedin, Instagram, ExternalLink } from 'lucide-react';
 
 interface LoginPageProps {
   onLoginSuccess: () => void;
@@ -162,6 +162,14 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, isDarkMode
           <div className="pt-6 mt-6 border-t border-slate-200 dark:border-slate-800 text-center space-y-2">
             <div className="text-xs font-medium text-slate-600 dark:text-slate-400">
               Developed by Shashank Rajput
+            </div>
+            <div className={`mt-5 rounded-xl border p-3 text-left ${isDarkMode ? 'border-slate-800 bg-slate-950/60' : 'border-slate-200 bg-slate-50'}`}>
+              <p className="text-[10px] font-black uppercase tracking-wider text-sky-500">Related tool</p>
+              <p className="mt-1 text-xs font-bold">Blogger Indexer</p>
+              <p className="mt-1 text-[11px] leading-relaxed text-slate-500">Submit published pages for search discovery and monitor their progress.</p>
+              <a href="https://seo-indexer-tool.vercel.app/" target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex items-center gap-1 text-[11px] font-bold text-sky-600 dark:text-sky-400">
+                Open companion tool <ExternalLink className="h-3 w-3" />
+              </a>
             </div>
             <div className="flex items-center justify-center gap-3">
               <a

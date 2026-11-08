@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ArrowRight, CheckCircle2, Lock, Moon, Plane, ShieldCheck, Sun } from 'lucide-react';
+import { ArrowRight, CheckCircle2, ExternalLink, Lock, Moon, Plane, ShieldCheck, Sun } from 'lucide-react';
 
 interface PublicLandingPageProps {
   onOpenDashboard: () => void;
@@ -60,6 +60,23 @@ export const PublicLandingPage: React.FC<PublicLandingPageProps> = ({ onOpenDash
                 <p className={`mt-2 text-sm leading-relaxed ${muted}`}>A guided workflow that keeps every article clear, useful, and ready for your customers.</p>
               </div>
             ))}
+          </section>
+
+          <section className="mx-auto max-w-5xl px-6 pb-20">
+            <div className={`rounded-3xl border p-8 ${surface}`}>
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div>
+                  <p className="text-xs font-black uppercase tracking-wider text-sky-500">A companion growth tool</p>
+                  <h2 className="mt-2 text-2xl font-black">Blogger Indexer</h2>
+                  <p className={`mt-3 max-w-2xl leading-relaxed ${muted}`}>
+                    Help your published articles get discovered by submitting pages for search review, checking progress, and keeping your publishing workflow organized in one simple companion workspace.
+                  </p>
+                </div>
+                <a href="https://seo-indexer-tool.vercel.app/" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-4 py-3 text-sm font-bold text-white hover:bg-sky-500">
+                  Open Blogger Indexer <ExternalLink className="h-4 w-4" />
+                </a>
+              </div>
+            </div>
           </section>
 
           <section className="mx-auto max-w-5xl px-6 pb-20">

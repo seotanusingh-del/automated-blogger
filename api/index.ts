@@ -11,6 +11,29 @@ const storageBucket = 'DATA';
 const publicStorageUrl = `${storageUrl}/storage/v1/object/public/${storageBucket}`;
 const pollinationsApiKey = process.env.POLLINATIONS_API_KEY || process.env.POLLINATIONS_SECRET_KEY || '';
 
+function normalizeAiContent(value: any) {
+  if (!value || typeof value !== 'object' || typeof value.title !== 'string' || typeof value.overview !== 'string' || !Array.isArray(value.services) || !Array.isArray(value.faqs)) {
+    return null;
+  }
+  return value;
+}
+
+function fallbackAiContent(airlineName: string, city: string, keyword: string, tfn: string) {
+  const topic = keyword.trim() || `${airlineName} flight support`;
+  return {
+    title: `${airlineName} ${city} ${topic}: Complete Passenger Guide`,
+    overview: `Looking for ${topic}? This practical guide explains the key steps for ${airlineName} passengers in ${city}, including what to check first, which booking details to keep ready, and what to confirm before accepting a new itinerary.\n\nRules for changes, refunds, missed departures, and onward reservations can depend on the fare and the circumstances. Contact the airline promptly and ask the reservations team to confirm the current conditions for your booking.\n\nFor assistance with ${topic}, keep your confirmation number ready and contact ${tfn || '+1-888-794-3464'}.`,
+    services: ['Reservation status checks', 'Flight rebooking guidance', 'Change-fee explanations', 'Refund and credit guidance', 'Baggage and check-in assistance', 'Return-flight status checks'],
+    faqs: [
+      { question: `What should I do about ${topic}?`, answer: `Contact the airline promptly with your booking reference and ask what options apply. Assistance is available at ${tfn || '+1-888-794-3464'}.` },
+      { question: 'Can my flight be rebooked?', answer: 'Rebooking depends on available flights and the conditions attached to the reservation. Confirm all charges before accepting.' },
+      { question: 'Could another segment be affected?', answer: 'Some no-show conditions may affect remaining segments, so ask the reservations team to check the full itinerary.' },
+      { question: 'Can I request a refund?', answer: 'Refund eligibility depends on the fare conditions and the reason for the disruption.' },
+      { question: `Where can I get ${topic} help?`, answer: `Keep your confirmation details ready and contact the reservations team at ${tfn || '+1-888-794-3464'}.` }
+    ]
+  };
+}
+
 app.get(['/api/images/pollinations', '/images/pollinations'], async (req, res) => {
   const rawPrompt = String(req.query.prompt || '').trim();
   if (!rawPrompt) return res.status(400).json({ error: 'Missing image prompt.' });
@@ -202,22 +225,7 @@ app.get(['/api/status', '/status'], async (req, res) => {
 // Server-side AI Generation using DEEPSEEK_API_KEY from environment variables
 app.post(['/api/ai/generate', '/ai/generate'], async (req, res) => {
   try {
-    const { airlineName, city, country, keyword, tfn, recentPosts, apiKey, variationSeed } = req.body;
-    const resolvedApiKey = (apiKey && String(apiKey).trim()) || process.env.DEEPSEEK_API_KEY || '';
-
-    if (!resolvedApiKey) {
-      return res.status(400).json({ 
-        error: 'DEEPSEEK_API_KEY is not configured in Vercel environment variables or provided in request.',
-        code: 'MISSING_AI_KEY'
-      });
-    }
-
-    const { default: OpenAI } = await import('openai');
-    const openai = new OpenAI({
-      apiKey: resolvedApiKey,
-      baseURL: 'https://api.deepseek.com',
-    });
-
+    const { airlineName, city, country, keyword, tfn, recentPosts, apiKey, geminiApiKey, variationSeed } = req.body;
     const previousTitles = (recentPosts && Array.isArray(recentPosts)) 
       ? recentPosts.map((p: any) => p.title).join(', ') 
       : 'None';
@@ -251,23 +259,50 @@ Return valid JSON with this exact structure:
   "faqs": [{"question": "...", "answer": "..."}]
 }`;
 
-    const response = await openai.chat.completions.create({
-      model: 'deepseek-chat',
-      temperature: 0.85,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt }
-      ],
-      response_format: { type: 'json_object' }
-    });
+    const providers: string[] = [];
+    const deepseekKey = (apiKey && String(apiKey).trim()) || process.env.DEEPSEEK_API_KEY || '';
+    const geminiKey = (geminiApiKey && String(geminiApiKey).trim()) || process.env.GEMINI_API_KEY || '';
+    if (geminiKey) providers.push('gemini');
+    if (deepseekKey) providers.push('deepseek');
+    if (pollinationsApiKey) providers.push('pollinations');
 
-    const contentStr = response.choices[0].message.content;
-    if (!contentStr) {
-      return res.status(500).json({ error: 'DeepSeek returned an empty response.' });
+    for (const provider of providers) {
+      try {
+        let content: any = null;
+        if (provider === 'gemini') {
+          const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${encodeURIComponent(geminiKey)}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              generationConfig: { temperature: 0.75, responseMimeType: 'application/json', maxOutputTokens: 1800 },
+              contents: [{ parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }] }]
+            })
+          });
+          const data = await response.json();
+          content = JSON.parse(data?.candidates?.[0]?.content?.parts?.[0]?.text || 'null');
+        } else {
+          const { default: OpenAI } = await import('openai');
+          const openai = new OpenAI({
+            apiKey: provider === 'deepseek' ? deepseekKey : pollinationsApiKey,
+            baseURL: provider === 'deepseek' ? 'https://api.deepseek.com' : 'https://gen.pollinations.ai/v1'
+          });
+          const response = await openai.chat.completions.create({
+            model: provider === 'deepseek' ? 'deepseek-chat' : 'openai/gpt-oss-20b',
+            temperature: 0.75,
+            max_tokens: 1800,
+            messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userPrompt }],
+            response_format: { type: 'json_object' }
+          });
+          content = JSON.parse(response.choices[0]?.message?.content || 'null');
+        }
+        const normalized = normalizeAiContent(content);
+        if (normalized) return res.json({ success: true, provider, data: normalized });
+      } catch (providerError) {
+        console.warn(`[AI provider failed: ${provider}]`, providerError);
+      }
     }
 
-    const json = JSON.parse(contentStr);
-    res.json({ success: true, data: json });
+    return res.json({ success: true, provider: 'template', data: fallbackAiContent(airlineName, city, keyword, tfn) });
   } catch (err: any) {
     console.error('[AI Generate API Error]:', err);
     res.status(500).json({ error: err.message || 'AI Generation failed.' });
