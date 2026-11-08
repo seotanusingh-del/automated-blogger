@@ -66,6 +66,7 @@ import { PublicLandingPage } from './components/PublicLandingPage';
 import { 
   generateDeepSeekContent, 
   generateFreeAiImageUrl, 
+  generatePollinationsImageUrl,
   BlogPostContent, 
   getDeepSeekApiKey, 
   setDeepSeekApiKey,
@@ -569,11 +570,20 @@ export default function App() {
       );
 
       // 3. Generate Free AI Image with Pollinations
-      const aiImageUrl = customImages[index % Math.max(customImages.length, 1)] ||
-        generateFreeAiImageUrl(
-          `${post.keyword} ${post.airlineName} ${post.city} traveler support editorial photography`,
-          Date.now() + index
-        );
+      let aiImageUrl = customImages[index % Math.max(customImages.length, 1)];
+      if (!aiImageUrl) {
+        try {
+          aiImageUrl = await generatePollinationsImageUrl(
+            `${post.keyword} ${post.airlineName} ${post.city} traveler support editorial photography`
+          );
+        } catch (imageError) {
+          console.warn('Pollinations image generation failed; using safe fallback URL:', imageError);
+          aiImageUrl = generateFreeAiImageUrl(
+            `${post.keyword} ${post.airlineName} ${post.city} traveler support editorial photography`,
+            Date.now() + index
+          );
+        }
+      }
 
       // 4. Update the post sections
       const updatedSections: PostSections = {
@@ -685,11 +695,20 @@ export default function App() {
           aiProvider
         );
 
-        const aiImageUrl = customImages[i % Math.max(customImages.length, 1)] ||
-          generateFreeAiImageUrl(
-            `${post.keyword} ${post.airlineName} ${post.city} traveler support editorial photography`,
-            Date.now() + i
-          );
+        let aiImageUrl = customImages[i % Math.max(customImages.length, 1)];
+        if (!aiImageUrl) {
+          try {
+            aiImageUrl = await generatePollinationsImageUrl(
+              `${post.keyword} ${post.airlineName} ${post.city} traveler support editorial photography`
+            );
+          } catch (imageError) {
+            console.warn('Pollinations image generation failed; using safe fallback URL:', imageError);
+            aiImageUrl = generateFreeAiImageUrl(
+              `${post.keyword} ${post.airlineName} ${post.city} traveler support editorial photography`,
+              Date.now() + i
+            );
+          }
+        }
 
         const updatedSections: PostSections = {
           ...(post.sections || {

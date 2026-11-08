@@ -236,8 +236,18 @@ Return valid JSON with this exact structure:
  * Free Image Generation logic using Pollinations.ai (No key required, 100% free)
  */
 export function generateFreeAiImageUrl(prompt: string, seed = Math.floor(Math.random() * 1000000)): string {
-  const encodedPrompt = encodeURIComponent(prompt + " travel, airline, airplane, professional photography, high resolution, 4k");
+  const safePrompt = prompt.replace(/[{}[\]<>]/g, ' ').replace(/\s+/g, ' ').slice(0, 500);
+  const encodedPrompt = encodeURIComponent(`${safePrompt}, travel editorial photography, airline, airplane, professional lighting, high resolution`);
   const width = 1200;
   const height = 630;
-  return `https://pollinations.ai/p/${encodedPrompt}?width=${width}&height=${height}&seed=${seed}&model=flux`;
+  return `https://gen.pollinations.ai/image/${encodedPrompt}?width=${width}&height=${height}&seed=${seed}&model=flux&nologo=true`;
+}
+
+export async function generatePollinationsImageUrl(prompt: string): Promise<string> {
+  const response = await fetch(`/api/images/pollinations?prompt=${encodeURIComponent(prompt)}`);
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || !data.url) {
+    throw new Error(data.error || 'Pollinations image generation failed.');
+  }
+  return data.url;
 }

@@ -9,6 +9,29 @@ app.use(express.json({ limit: '10mb' }));
 const storageUrl = process.env.SUPABASE_URL || 'https://gplxknbnohajegmxkvot.supabase.co';
 const storageBucket = 'DATA';
 const publicStorageUrl = `${storageUrl}/storage/v1/object/public/${storageBucket}`;
+const pollinationsApiKey = process.env.POLLINATIONS_API_KEY || process.env.POLLINATIONS_SECRET_KEY || '';
+
+app.get(['/api/images/pollinations', '/images/pollinations'], async (req, res) => {
+  const rawPrompt = String(req.query.prompt || '').trim();
+  if (!rawPrompt) return res.status(400).json({ error: 'Missing image prompt.' });
+  const prompt = rawPrompt
+    .replace(/[{}[\]<>]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .slice(0, 500);
+  const imageUrl = `https://gen.pollinations.ai/image/${encodeURIComponent(prompt)}?model=flux&width=1200&height=630&nologo=true&seed=${Math.floor(Math.random() * 1000000)}`;
+  try {
+    const response = await fetch(imageUrl, {
+      headers: pollinationsApiKey ? { Authorization: `Bearer ${pollinationsApiKey}` } : undefined
+    });
+    if (!response.ok) {
+      const details = await response.text().catch(() => '');
+      return res.status(response.status).json({ error: `Pollinations image generation failed (${response.status}).`, details: details.slice(0, 300) });
+    }
+    res.json({ url: imageUrl });
+  } catch (error) {
+    res.status(502).json({ error: error instanceof Error ? error.message : 'Pollinations image generation failed.' });
+  }
+});
 
 app.get(['/api/storage/images', '/storage/images'], async (req, res) => {
   const prefix = String(req.query.prefix || '');
