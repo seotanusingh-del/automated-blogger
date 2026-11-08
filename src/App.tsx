@@ -74,6 +74,8 @@ import {
   setGeminiApiKey,
   AiProvider
 } from './services/deepseek';
+
+type SavedTemplate = GeneratedPost & { templateName?: string };
 import {
   getRecentPosts,
   listPublicBucketImages,
@@ -186,7 +188,7 @@ export default function App() {
   });
   const [imageLibrary, setImageLibrary] = useState<string[]>([]);
   const [isUploadingImages, setIsUploadingImages] = useState(false);
-  const [savedTemplates, setSavedTemplates] = useState<GeneratedPost[]>(() => {
+  const [savedTemplates, setSavedTemplates] = useState<SavedTemplate[]>(() => {
     try { return JSON.parse(localStorage.getItem('easyflight_saved_templates') || '[]'); } catch { return []; }
   });
 
@@ -544,7 +546,13 @@ export default function App() {
     if (!activePost) return;
     const name = prompt('Name this reusable draft template:', `${activePost.airlineName} ${activePost.keyword}`);
     if (!name?.trim()) return;
-    setSavedTemplates(current => [{ ...activePost, id: `template-${Date.now()}`, status: 'Draft' }, ...current]);
+    const template: SavedTemplate = {
+      ...activePost,
+      id: `template-${Date.now()}`,
+      status: 'Draft',
+      templateName: name.trim()
+    };
+    setSavedTemplates(current => [template, ...current.filter(item => item.templateName !== template.templateName)]);
     setStatusMessage(`Saved template "${name.trim()}".`);
   };
 
@@ -563,7 +571,7 @@ export default function App() {
     setStatusMessage('Draft template added to the review queue.');
   };
 
-  const updateDraftField = (id: string, field: 'title' | 'keyword', value: string) => {
+  const updateDraftField = (id: string, field: 'title' | 'keyword' | 'htmlContent' | 'status', value: string) => {
     setGeneratedPosts(posts => posts.map(post => post.id === id ? { ...post, [field]: value } : post));
   };
 
@@ -573,20 +581,22 @@ export default function App() {
   };
 
   const createBlankDraft = () => {
-    if (!selectedAirlines[0]) {
-      setStatusMessage('Select an airline before creating a draft.');
+    const airline = selectedAirlines[0] || airlines[0];
+    if (!airline) {
+      setStatusMessage('Add an airline before creating a draft.');
       return;
     }
-    const office = selectedAirlines[0].offices[0] || {
-      id: `${selectedAirlines[0].id}-draft`,
-      name: `${selectedAirlines[0].name} Office`,
+    const office = airline.offices[0] || {
+      id: `${airline.id}-draft`,
+      name: `${airline.name} Office`,
       city: 'Headquarters',
       country: 'United States'
     };
-    const draft = generateOfficeBlogPost(selectedAirlines[0], office, targetKeyword, commonTfn, customImages[0], socialLinks, isDarkMode ? 'dark' : 'light', companyName, companyLogoUrl, socialLinks.website);
+    const draft = generateOfficeBlogPost(airline, office, targetKeyword || 'New blog topic', commonTfn, customImages[0], socialLinks, isDarkMode ? 'dark' : 'light', companyName, companyLogoUrl, socialLinks.website);
     draft.status = 'Draft';
     setGeneratedPosts(current => [...current, draft]);
     setCurrentPostIndex(generatedPosts.length);
+    setActiveSection('drafts');
     setStatusMessage('Blank editable draft added to the review queue.');
   };
 
@@ -1293,9 +1303,6 @@ export default function App() {
         isDarkMode ? 'bg-slate-900/95 border-slate-800' : 'bg-white/95 border-slate-200 shadow-sm'
       }`}>
         <div className="flex items-center gap-2">
-          <button type="button" onClick={() => setIsSidebarOpen(current => !current)} className="rounded-lg border p-2" aria-label="Toggle navigation">
-            <Settings className="h-4 w-4" />
-          </button>
           <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-sky-500 to-blue-600 flex items-center justify-center text-white shadow font-bold">
             <Plane className="w-4 h-4 text-white" />
           </div>
@@ -1804,10 +1811,11 @@ export default function App() {
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <p className="text-xs font-bold">Draft &amp; Template Manager</p>
-                    <p className="text-[11px] text-slate-500">Save reusable structures, create your own drafts, and load them into the queue.</p>
+                    <p className="text-[11px] text-slate-500">Create, edit, duplicate, save, reuse, and remove complete blog drafts before publishing.</p>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    <button type="button" onClick={createBlankDraft} className="rounded-lg border border-slate-300 px-2.5 py-1.5 text-[11px] font-semibold dark:border-slate-700">New draft</button>
+                    <span className="rounded-lg bg-slate-500/10 px-2.5 py-1.5 text-[11px] font-semibold text-slate-500">{generatedPosts.filter(post => post.status === 'Draft').length} drafts · {savedTemplates.length} templates</span>
+                    <button type="button" onClick={createBlankDraft} className="rounded-lg border border-slate-300 px-2.5 py-1.5 text-[11px] font-semibold dark:border-slate-700"><Plus className="mr-1 inline h-3 w-3" />New draft</button>
                     <button type="button" onClick={saveActiveAsTemplate} disabled={!activePost} className="rounded-lg bg-sky-600 px-2.5 py-1.5 text-[11px] font-semibold text-white disabled:opacity-50">Save active template</button>
                   </div>
                 </div>
@@ -1832,23 +1840,35 @@ export default function App() {
                     {activePost ? <>
                       <label className="mt-3 block text-[11px] font-semibold">Draft title<input value={activePost.title} onChange={event => updateDraftField(activePost.id, 'title', event.target.value)} className={`mt-1 w-full rounded-lg border p-2 text-xs ${isDarkMode ? 'border-slate-800 bg-slate-950 text-white' : 'border-slate-300 bg-white'}`} /></label>
                       <label className="mt-3 block text-[11px] font-semibold">Target keyword<input value={activePost.keyword} onChange={event => updateDraftField(activePost.id, 'keyword', event.target.value)} className={`mt-1 w-full rounded-lg border p-2 text-xs ${isDarkMode ? 'border-slate-800 bg-slate-950 text-white' : 'border-slate-300 bg-white'}`} /></label>
+                      <label className="mt-3 block text-[11px] font-semibold">Workflow status
+                        <select value={activePost.status} onChange={event => updateDraftField(activePost.id, 'status', event.target.value)} className={`mt-1 w-full rounded-lg border p-2 text-xs ${isDarkMode ? 'border-slate-800 bg-slate-950 text-white' : 'border-slate-300 bg-white'}`}>
+                          <option value="Draft">Draft</option><option value="Ready">Ready</option>
+                        </select>
+                      </label>
+                      <label className="mt-3 block text-[11px] font-semibold">Full HTML content
+                        <textarea value={activePost.htmlContent} onChange={event => updateDraftField(activePost.id, 'htmlContent', event.target.value)} rows={9} className={`mt-1 w-full resize-y rounded-lg border p-2 font-mono text-[11px] leading-5 ${isDarkMode ? 'border-slate-800 bg-slate-950 text-white' : 'border-slate-300 bg-white text-slate-900'}`} placeholder="Write or paste the complete article HTML here..." />
+                      </label>
+                      <div className="mt-3 flex flex-wrap gap-2">
                       <button type="button" onClick={() => setActiveSection('review')} className="mt-3 rounded-lg bg-emerald-600 px-3 py-2 text-[11px] font-bold text-white">Open in review editor</button>
+                        <button type="button" onClick={() => deleteDraft(activePost.id)} className="mt-3 rounded-lg border border-rose-300 px-3 py-2 text-[11px] font-bold text-rose-600"><Trash2 className="mr-1 inline h-3 w-3" />Delete draft</button>
+                      </div>
                     </> : <p className="mt-3 text-[11px] text-slate-500">Select a draft to edit its title, keyword, content, settings, and banner.</p>}
                   </div>
                 </div>
-                {savedTemplates.length > 0 && (
-                  <div className="mt-3 space-y-2">
+                <div className="mt-3 rounded-xl border p-3 dark:border-slate-800">
+                  <p className="text-[11px] font-black uppercase tracking-wide text-slate-500">Reusable templates</p>
+                  {savedTemplates.length > 0 ? <div className="mt-2 grid gap-2 md:grid-cols-2">
                     {savedTemplates.map(template => (
                       <div key={template.id} className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white p-2 text-[11px] dark:border-slate-800 dark:bg-slate-900">
-                        <span className="truncate font-medium">{template.title}</span>
+                        <div className="min-w-0"><span className="block truncate font-bold">{template.templateName || template.title || 'Untitled template'}</span><span className="block truncate text-[10px] text-slate-500">{template.keyword || 'No keyword'}</span></div>
                         <div className="flex shrink-0 gap-2">
                           <button type="button" onClick={() => loadTemplate(template)} className="font-semibold text-sky-600 hover:underline">Use</button>
                           <button type="button" onClick={() => setSavedTemplates(current => current.filter(item => item.id !== template.id))} className="font-semibold text-rose-500 hover:underline">Delete</button>
                         </div>
                       </div>
                     ))}
-                  </div>
-                )}
+                  </div> : <p className="mt-2 rounded-lg bg-slate-500/10 p-3 text-[11px] text-slate-500">No reusable templates yet. Select any draft, edit its HTML, then choose “Save active template”.</p>}
+                </div>
               </div>
 
             </div>
