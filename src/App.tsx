@@ -138,9 +138,10 @@ export default function App() {
   const [companyLogoUrl, setCompanyLogoUrl] = useState<string>(() => {
     try { return JSON.parse(localStorage.getItem('easyflight_session_draft') || '{}').companyLogoUrl || ''; } catch { return ''; }
   });
-  const [activeSection, setActiveSection] = useState<'setup' | 'airlines' | 'drafts' | 'review' | 'history'>('setup');
+  const [activeSection, setActiveSection] = useState<'setup' | 'airlines' | 'review' | 'drafts' | 'history'>('setup');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [historyFilter, setHistoryFilter] = useState('');
+  const [historyStatusFilter, setHistoryStatusFilter] = useState<'all' | GeneratedPost['status']>('all');
   const [selectedHistoryIds, setSelectedHistoryIds] = useState<string[]>([]);
 
   const [isWebGroundingEnabled, setIsWebGroundingEnabled] = useState(true);
@@ -200,7 +201,7 @@ export default function App() {
           return parsed.generatedPosts.map((p: any) => {
             const banner = p.imageUrl && p.imageUrl.trim() && !p.imageUrl.startsWith('data:image/svg')
               ? p.imageUrl
-              : generateOfficeBannerSvg(p.airlineName, p.officeName, p.city, p.tfnNumber, theme, p.companyName || companyName, p.companyLogoUrl || companyLogoUrl);
+              : generateOfficeBannerSvg(p.airlineName, p.officeName, p.city, p.tfnNumber, theme, p.companyName || companyName, p.companyLogoUrl || companyLogoUrl, p.socialLinks?.website || socialLinks.website);
 
             const html = p.htmlContent && p.htmlContent.length > 50
               ? p.htmlContent
@@ -252,7 +253,7 @@ export default function App() {
   const [bulkProgress, setBulkProgress] = useState<{ current: number; total: number; currentTitle?: string } | null>(null);
 
   const activePost = generatedPosts[currentPostIndex] || null;
-  const workflowSteps = ['setup', 'airlines', 'drafts', 'review', 'history'] as const;
+  const workflowSteps = ['setup', 'airlines', 'review', 'drafts', 'history'] as const;
   const goToWorkflowStep = (direction: 1 | -1) => {
     const current = workflowSteps.indexOf(activeSection);
     const next = Math.min(workflowSteps.length - 1, Math.max(0, current + direction));
@@ -262,7 +263,8 @@ export default function App() {
   };
   const filteredHistoryPosts = generatedPosts.filter(post => {
     const query = historyFilter.trim().toLowerCase();
-    return !query || [post.title, post.keyword, post.airlineName, post.status, post.publishedUrl || ''].some(value => value.toLowerCase().includes(query));
+    const matchesStatus = historyStatusFilter === 'all' || post.status === historyStatusFilter;
+    return matchesStatus && (!query || [post.title, post.keyword, post.airlineName, post.status, post.publishedUrl || ''].some(value => value.toLowerCase().includes(query)));
   });
   const copyHistoryLinks = () => {
     const selected = filteredHistoryPosts.filter(post => selectedHistoryIds.includes(post.id));
@@ -423,7 +425,8 @@ export default function App() {
               socialLinks,
               currentTheme,
               companyName,
-              companyLogoUrl
+              companyLogoUrl,
+              socialLinks.website
             )
           );
         });
@@ -448,7 +451,8 @@ export default function App() {
         activePost.tfnNumber, 
         next ? 'dark' : 'light',
         companyName,
-        companyLogoUrl
+        companyLogoUrl,
+        socialLinks.website
       );
       const updatedSections = activePost.sections || {
         urgentCalloutTitle: '24/7 Priority Travel Assistance & Booking Desk',
@@ -553,9 +557,19 @@ export default function App() {
       title: template.title,
       sections: template.sections ? { ...template.sections, faqs: [...template.sections.faqs], servicesList: [...template.sections.servicesList] } : undefined
     };
+
     setGeneratedPosts(current => [...current, copy]);
     setCurrentPostIndex(generatedPosts.length);
     setStatusMessage('Draft template added to the review queue.');
+  };
+
+  const updateDraftField = (id: string, field: 'title' | 'keyword', value: string) => {
+    setGeneratedPosts(posts => posts.map(post => post.id === id ? { ...post, [field]: value } : post));
+  };
+
+  const deleteDraft = (id: string) => {
+    setGeneratedPosts(posts => posts.filter(post => post.id !== id));
+    if (activePost?.id === id) setCurrentPostIndex(0);
   };
 
   const createBlankDraft = () => {
@@ -569,7 +583,7 @@ export default function App() {
       city: 'Headquarters',
       country: 'United States'
     };
-    const draft = generateOfficeBlogPost(selectedAirlines[0], office, targetKeyword, commonTfn, customImages[0], socialLinks, isDarkMode ? 'dark' : 'light', companyName, companyLogoUrl);
+    const draft = generateOfficeBlogPost(selectedAirlines[0], office, targetKeyword, commonTfn, customImages[0], socialLinks, isDarkMode ? 'dark' : 'light', companyName, companyLogoUrl, socialLinks.website);
     draft.status = 'Draft';
     setGeneratedPosts(current => [...current, draft]);
     setCurrentPostIndex(generatedPosts.length);
@@ -597,7 +611,8 @@ export default function App() {
           socialLinks,
           currentTheme,
           companyName,
-          companyLogoUrl
+          companyLogoUrl,
+          socialLinks.website
         );
         newQueue.push(post);
       });
@@ -722,7 +737,8 @@ export default function App() {
           socialLinks,
           currentTheme,
           companyName,
-          companyLogoUrl
+          companyLogoUrl,
+          socialLinks.website
         );
         baseQueue.push(post);
       });
@@ -892,7 +908,8 @@ export default function App() {
       activePost.tfnNumber,
       isDarkMode ? 'dark' : 'light',
       companyName,
-      companyLogoUrl
+      companyLogoUrl,
+      socialLinks.website
     );
     const updatedSections = activePost.sections || {
       urgentCalloutTitle: '24/7 Priority Travel Assistance & Booking Desk',
@@ -915,7 +932,7 @@ export default function App() {
   const applyBrandingToPosts = () => {
     setGeneratedPosts(posts => posts.map(post => {
       const banner = post.imageUrl.startsWith('data:image/svg')
-        ? generateOfficeBannerSvg(post.airlineName, post.officeName, post.city, post.tfnNumber, isDarkMode ? 'dark' : 'light', companyName, companyLogoUrl)
+        ? generateOfficeBannerSvg(post.airlineName, post.officeName, post.city, post.tfnNumber, isDarkMode ? 'dark' : 'light', companyName, companyLogoUrl, socialLinks.website)
         : post.imageUrl;
       return {
         ...rebuildPost(post, post.sections || {
@@ -983,12 +1000,12 @@ export default function App() {
   const handleSaveLinksAndApply = () => {
     setShowSocialModal(false);
     if (activePost && activePost.sections) {
-      setGeneratedPosts(posts => posts.map(post => rebuildPost(
-        post,
-        post.sections || activePost.sections!,
-        post.imageUrl,
-        socialLinks
-      )));
+      setGeneratedPosts(posts => posts.map(post => {
+        const banner = post.imageUrl.startsWith('data:image/svg')
+          ? generateOfficeBannerSvg(post.airlineName, post.officeName, post.city, post.tfnNumber, isDarkMode ? 'dark' : 'light', companyName, companyLogoUrl, socialLinks.website)
+          : post.imageUrl;
+        return rebuildPost(post, post.sections || activePost.sections!, banner, socialLinks, companyName);
+      }));
     }
     setStatusMessage('Website, portals, and social links saved & embedded!');
     setTimeout(() => setStatusMessage(null), 3000);
@@ -1276,7 +1293,7 @@ export default function App() {
         isDarkMode ? 'bg-slate-900/95 border-slate-800' : 'bg-white/95 border-slate-200 shadow-sm'
       }`}>
         <div className="flex items-center gap-2">
-          <button type="button" onClick={() => setIsSidebarOpen(true)} className="rounded-lg border p-2 lg:hidden" aria-label="Open navigation">
+          <button type="button" onClick={() => setIsSidebarOpen(current => !current)} className="rounded-lg border p-2" aria-label="Toggle navigation">
             <Settings className="h-4 w-4" />
           </button>
           <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-sky-500 to-blue-600 flex items-center justify-center text-white shadow font-bold">
@@ -1343,9 +1360,12 @@ export default function App() {
             <span className="font-semibold">{customRefreshToken ? 'Custom Token' : 'Google Token'}</span>
           </button>
 
-          <button type="button" onClick={() => setIsSidebarOpen(true)} className="rounded-lg border p-2" aria-label="Open workflow navigation">
+          <button type="button" onClick={() => setIsSidebarOpen(current => !current)} className="rounded-lg border p-2" aria-label="Toggle workflow navigation">
             <Settings className="h-4 w-4" />
           </button>
+          <a href="https://seo-indexer-tool.vercel.app/" target="_blank" rel="noopener noreferrer" className="rounded-lg border p-2 text-sky-600 hover:bg-sky-500/10" aria-label="Open Blogger Indexer" title="Blogger Indexer">
+            <ExternalLink className="h-4 w-4" />
+          </a>
 
           {/* Publish Secret Config Button */}
           <button
@@ -1457,7 +1477,6 @@ export default function App() {
       )}
 
       {/* Settings and related tools remain available without crowding the header. */}
-      {isSidebarOpen && <button type="button" aria-label="Close navigation" onClick={() => setIsSidebarOpen(false)} className="fixed inset-0 z-40 bg-slate-950/40 lg:hidden" />}
       <aside className={`${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} fixed left-0 top-0 bottom-0 z-50 w-[min(86vw,20rem)] border-r p-4 transition-transform ${
         isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
       }`}>
@@ -1490,11 +1509,23 @@ export default function App() {
             if (secret !== null) { setPublishSecret(secret.trim()); secret.trim() ? localStorage.setItem('easyflight_publish_secret', secret.trim()) : localStorage.removeItem('easyflight_publish_secret'); }
           }} className="block w-full rounded-lg px-3 py-2 text-left hover:bg-sky-500/10 hover:text-sky-500">Publishing security</button>
           <button onClick={() => setShowSocialModal(true)} className="block w-full rounded-lg px-3 py-2 text-left hover:bg-sky-500/10 hover:text-sky-500">Website & social links</button>
-          <a href="https://seo-indexer-tool.vercel.app/" target="_blank" rel="noopener noreferrer" className="block rounded-lg px-3 py-2 hover:bg-sky-500/10 hover:text-sky-500">Blogger Indexer <ExternalLink className="ml-1 inline h-3 w-3" /></a>
+          <a href="https://seo-indexer-tool.vercel.app/" target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 rounded-lg px-3 py-2 hover:bg-sky-500/10 hover:text-sky-500">Blogger Indexer <ExternalLink className="ml-1 inline h-3 w-3" /></a>
         </nav>
       </aside>
 
-      <main className="flex-1 w-full max-w-7xl mx-auto p-3 sm:p-5 lg:pl-6">
+      {!isSidebarOpen && (
+        <nav className={`fixed bottom-4 left-1/2 z-40 flex -translate-x-1/2 items-center gap-1 rounded-2xl border p-2 shadow-xl ${
+          isDarkMode ? 'border-slate-700 bg-slate-900/95' : 'border-slate-200 bg-white/95'
+        }`} aria-label="Workflow quick navigation">
+          {workflowSteps.map((section, index) => {
+            const Icon = index === 0 ? Settings : index === 1 ? Plane : index === 2 ? Eye : index === 3 ? FileCode : ListFilter;
+            return <button key={section} type="button" onClick={() => setActiveSection(section)} title={`Step ${index + 1}: ${section}`} className={`rounded-xl p-2.5 ${activeSection === section ? 'bg-sky-600 text-white' : 'text-slate-500 hover:bg-sky-500/10'}`}><Icon className="h-4 w-4" /></button>;
+          })}
+          <button type="button" onClick={() => setIsSidebarOpen(true)} title="Open full navigation" className="rounded-xl p-2.5 text-slate-500 hover:bg-sky-500/10"><ChevronRight className="h-4 w-4 rotate-90" /></button>
+        </nav>
+      )}
+
+      <main className={`flex-1 w-full max-w-7xl mx-auto p-3 pb-24 sm:p-5 sm:pb-24 transition-[margin] duration-200 ${isSidebarOpen ? 'ml-[min(86vw,20rem)]' : 'ml-0'}`}>
 
         {/* LEFT COLUMN: Controls, TFN, Keyword, Airline Selector */}
         <div id="workspace-controls" className={`w-full max-w-6xl mx-auto space-y-4 ${activeSection === 'review' || activeSection === 'history' ? 'hidden' : ''}`}>
@@ -1770,14 +1801,39 @@ export default function App() {
               </div>
 
               <div id="templates" className={`${activeSection === 'drafts' ? '' : 'hidden'} rounded-xl border p-4 ${isDarkMode ? 'border-slate-800 bg-slate-950/60' : 'border-slate-200 bg-slate-50'}`}>
-                <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <p className="text-xs font-bold">Draft &amp; Template Manager</p>
                     <p className="text-[11px] text-slate-500">Save reusable structures, create your own drafts, and load them into the queue.</p>
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap gap-2">
                     <button type="button" onClick={createBlankDraft} className="rounded-lg border border-slate-300 px-2.5 py-1.5 text-[11px] font-semibold dark:border-slate-700">New draft</button>
                     <button type="button" onClick={saveActiveAsTemplate} disabled={!activePost} className="rounded-lg bg-sky-600 px-2.5 py-1.5 text-[11px] font-semibold text-white disabled:opacity-50">Save active template</button>
+                  </div>
+                </div>
+                <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+                  <div className={`rounded-xl border p-3 ${isDarkMode ? 'border-slate-800 bg-slate-900' : 'border-slate-200 bg-white'}`}>
+                    <p className="text-[11px] font-black uppercase tracking-wide text-slate-500">Saved drafts</p>
+                    <div className="mt-2 max-h-72 space-y-2 overflow-y-auto">
+                      {generatedPosts.filter(post => post.status === 'Draft').map(draft => (
+                        <div key={draft.id} className={`rounded-lg border p-2 ${activePost?.id === draft.id ? 'border-sky-500' : 'border-slate-200 dark:border-slate-800'}`}>
+                          <button type="button" onClick={() => { const index = generatedPosts.findIndex(post => post.id === draft.id); setCurrentPostIndex(index); }} className="w-full truncate text-left text-xs font-bold">{draft.title || 'Untitled draft'}</button>
+                          <div className="mt-2 flex gap-2">
+                            <button type="button" onClick={() => loadTemplate(draft)} className="text-[10px] font-bold text-sky-600">Duplicate</button>
+                            <button type="button" onClick={() => deleteDraft(draft.id)} className="text-[10px] font-bold text-rose-500">Delete</button>
+                          </div>
+                        </div>
+                      ))}
+                      {!generatedPosts.some(post => post.status === 'Draft') && <p className="rounded-lg bg-slate-500/10 p-3 text-[11px] text-slate-500">No drafts yet. Create a new draft or generate a template from the setup step.</p>}
+                    </div>
+                  </div>
+                  <div className={`rounded-xl border p-3 ${isDarkMode ? 'border-slate-800 bg-slate-900' : 'border-slate-200 bg-white'}`}>
+                    <p className="text-[11px] font-black uppercase tracking-wide text-slate-500">Edit selected draft</p>
+                    {activePost ? <>
+                      <label className="mt-3 block text-[11px] font-semibold">Draft title<input value={activePost.title} onChange={event => updateDraftField(activePost.id, 'title', event.target.value)} className={`mt-1 w-full rounded-lg border p-2 text-xs ${isDarkMode ? 'border-slate-800 bg-slate-950 text-white' : 'border-slate-300 bg-white'}`} /></label>
+                      <label className="mt-3 block text-[11px] font-semibold">Target keyword<input value={activePost.keyword} onChange={event => updateDraftField(activePost.id, 'keyword', event.target.value)} className={`mt-1 w-full rounded-lg border p-2 text-xs ${isDarkMode ? 'border-slate-800 bg-slate-950 text-white' : 'border-slate-300 bg-white'}`} /></label>
+                      <button type="button" onClick={() => setActiveSection('review')} className="mt-3 rounded-lg bg-emerald-600 px-3 py-2 text-[11px] font-bold text-white">Open in review editor</button>
+                    </> : <p className="mt-3 text-[11px] text-slate-500">Select a draft to edit its title, keyword, content, settings, and banner.</p>}
                   </div>
                 </div>
                 {savedTemplates.length > 0 && (
@@ -1809,13 +1865,19 @@ export default function App() {
             </div>
           </div>
           <input value={historyFilter} onChange={(event) => setHistoryFilter(event.target.value)} placeholder="Filter by day, keyword, airline, status, or title" className={`mt-4 w-full rounded-lg border p-2.5 text-xs outline-none ${isDarkMode ? 'border-slate-800 bg-slate-950 text-white' : 'border-slate-300 bg-slate-50 text-slate-900'}`} />
+          <select value={historyStatusFilter} onChange={event => setHistoryStatusFilter(event.target.value as typeof historyStatusFilter)} className={`mt-2 rounded-lg border p-2 text-xs ${isDarkMode ? 'border-slate-800 bg-slate-950 text-white' : 'border-slate-300 bg-white'}`}>
+            <option value="all">All statuses</option><option value="Published">Published</option><option value="Ready">Ready</option><option value="Draft">Draft</option><option value="Error">Error</option>
+          </select>
           <div className="mt-4 space-y-2">
             {filteredHistoryPosts.map(post => <label key={post.id} className={`flex items-center gap-3 rounded-lg border p-3 text-xs ${isDarkMode ? 'border-slate-800 bg-slate-950/50' : 'border-slate-200 bg-slate-50'}`}>
               <input type="checkbox" checked={selectedHistoryIds.includes(post.id)} onChange={(event) => setSelectedHistoryIds(current => event.target.checked ? [...current, post.id] : current.filter(id => id !== post.id))} />
               <span className="min-w-0 flex-1 truncate font-semibold">{post.title}</span>
               <span className="hidden text-slate-500 sm:inline">{post.keyword}</span>
               <span className="rounded-full bg-sky-500/10 px-2 py-1 text-[10px] font-bold text-sky-600">{post.status}</span>
-              {post.publishedUrl && <a href={post.publishedUrl} target="_blank" rel="noreferrer" className="text-sky-600 hover:underline">Open</a>}
+              {post.publishedUrl && <>
+                <a href={post.publishedUrl} target="_blank" rel="noreferrer" className="text-sky-600 hover:underline">Open</a>
+                <button type="button" onClick={() => { void navigator.clipboard.writeText(post.publishedUrl || ''); setStatusMessage('Published link copied.'); }} className="text-sky-600 hover:underline">Copy</button>
+              </>}
             </label>)}
             {!filteredHistoryPosts.length && <p className="rounded-lg bg-slate-500/10 p-4 text-xs text-slate-500">No matching history items.</p>}
           </div>

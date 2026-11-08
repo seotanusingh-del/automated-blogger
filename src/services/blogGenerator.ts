@@ -11,7 +11,8 @@ export function generateOfficeBannerSvg(
   tfnNumber: string,
   theme: 'light' | 'dark' = 'light',
   companyName = '',
-  companyLogoUrl = ''
+  companyLogoUrl = '',
+  companyWebsite = ''
 ): string {
   const isSouthwest = airline.toLowerCase().includes('southwest');
   const isDelta = airline.toLowerCase().includes('delta');
@@ -25,6 +26,7 @@ export function generateOfficeBannerSvg(
                       isAlaska ? '#00a3e0' : '#0284c7';
 
   const branding = companyName.trim();
+  const website = companyWebsite.trim() || 'https://easyflightconnectblog.blogspot.com';
   const logo = companyLogoUrl.trim()
     ? `<image href="${escapeXml(companyLogoUrl.trim())}" x="1030" y="45" width="115" height="70" preserveAspectRatio="xMidYMid meet"/>`
     : '';
@@ -87,7 +89,7 @@ export function generateOfficeBannerSvg(
           ✓ Flight Reservations, Ticket Rebooking &amp; Schedule Updates
         </text>
         <text x="0" y="76" fill="#1e293b" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="20" font-weight="600">
-          ✓ Lost Baggage PIR Tracking &amp; US DOT Passenger Rights
+          ✓ Lost Baggage Tracking &amp; Regional Passenger Guidance
         </text>
       </g>
 
@@ -103,7 +105,7 @@ export function generateOfficeBannerSvg(
 
       ${brandLabel}
       <text x="1120" y="580" fill="#64748b" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="16" font-weight="600" text-anchor="end">
-        easyflightconnectblog.blogspot.com
+        ${escapeXml(website.replace(/^https?:\/\//, ''))}
       </text>
     </svg>`;
   } else {
@@ -157,7 +159,7 @@ export function generateOfficeBannerSvg(
           ✓ Flight Reservations, Ticket Rebooking &amp; Schedule Updates
         </text>
         <text x="0" y="76" fill="#e2e8f0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="20">
-          ✓ Lost Baggage PIR Tracking &amp; US DOT Passenger Rights
+          ✓ Lost Baggage Tracking &amp; Regional Passenger Guidance
         </text>
       </g>
 
@@ -173,7 +175,7 @@ export function generateOfficeBannerSvg(
 
       ${brandLabel.replace(/#64748b/g, '#cbd5e1')}
       <text x="1120" y="580" fill="#94a3b8" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="16" font-weight="600" text-anchor="end">
-        easyflightconnectblog.blogspot.com
+        ${escapeXml(website.replace(/^https?:\/\//, ''))}
       </text>
     </svg>`;
   }
@@ -234,10 +236,15 @@ export function buildHtmlFromSections(
     if (socialLinks.supportUrl && socialLinks.supportUrl.trim()) {
       badges.push(`<a href="${socialLinks.supportUrl}" target="_blank" rel="noopener" style="display:inline-block;margin:4px 6px;padding:8px 16px;background:#0284c7;color:#ffffff;text-decoration:none;border-radius:20px;font-size:12px;font-weight:bold;">🛟 Help &amp; Support Portal</a>`);
     }
-    // High-Authority Government Aviation Complaint Link
-    badges.push(`<a href="https://www.transportation.gov/airconsumer/file-consumer-complaint" target="_blank" rel="noopener" style="display:inline-block;margin:4px 6px;padding:8px 16px;background:#1e3a8a;color:#ffffff;text-decoration:none;border-radius:20px;font-size:12px;font-weight:bold;">⚖️ US DOT Official Complaint Portal</a>`);
-    // Internal Directory Cross-Link
-    badges.push(`<a href="https://easyflightconnectblog.blogspot.com/" target="_blank" rel="noopener" style="display:inline-block;margin:4px 6px;padding:8px 16px;background:#0369a1;color:#ffffff;text-decoration:none;border-radius:20px;font-size:12px;font-weight:bold;">✈️ EasyFlightConnect Directory</a>`);
+    const region = country.toLowerCase();
+    const complaintPortal = region.includes('canada')
+      ? ['https://otc-cta.gc.ca/eng/file-complaint', '🇨🇦 Canadian Transportation Complaint Portal']
+      : region.includes('united kingdom') || region.includes('uk') || region.includes('england')
+        ? ['https://www.caa.co.uk/passengers/resolving-your-flight-problem/', '🇬🇧 UK CAA Passenger Guidance']
+        : ['https://www.transportation.gov/airconsumer/file-consumer-complaint', '🇺🇸 US DOT Consumer Complaint Portal'];
+    badges.push(`<a href="${complaintPortal[0]}" target="_blank" rel="noopener" style="display:inline-block;margin:4px 6px;padding:8px 16px;background:#1e3a8a;color:#ffffff;text-decoration:none;border-radius:20px;font-size:12px;font-weight:bold;">⚖️ ${complaintPortal[1]}</a>`);
+    const companySite = socialLinks.website?.trim();
+    if (companySite) badges.push(`<a href="${companySite}" target="_blank" rel="noopener" style="display:inline-block;margin:4px 6px;padding:8px 16px;background:#0369a1;color:#ffffff;text-decoration:none;border-radius:20px;font-size:12px;font-weight:bold;">🌐 ${escapeXml(companyName || 'Company Website')}</a>`);
 
     if (socialLinks.whatsapp && socialLinks.whatsapp.trim()) {
       badges.push(`<a href="${socialLinks.whatsapp}" target="_blank" rel="noopener" style="display:inline-block;margin:4px 6px;padding:8px 16px;background:#25d366;color:#ffffff;text-decoration:none;border-radius:20px;font-size:12px;font-weight:bold;">💬 WhatsApp Chat</a>`);
@@ -285,7 +292,7 @@ export function buildHtmlFromSections(
     { stepNumber: 1, title: 'Gather Passenger Documentation & PIR Reference', instruction: `Collect your 6-character PNR booking reference, e-ticket copy, boarding pass, and baggage Property Irregularity Report (PIR) receipt issued by ${airlineName} ground staff.` },
     { stepNumber: 2, title: `Contact ${airlineName} Immediate Dispute Line`, instruction: `Call the 24/7 customer resolution hotline at ${cleanTfn} to speak directly with an escalated ticketing agent for same-day rebooking, flight voucher issues, or refund claims.` },
     { stepNumber: 3, title: 'Submit Formal Electronic Claim to Carrier Relations', instruction: `Submit your formal claim through the airline dispute portal within 30 days of the incident, specifying exact flight numbers and monetary claim amounts.` },
-    { stepNumber: 4, title: 'Escalate to the US Department of Transportation (DOT)', instruction: `If ${airlineName} does not provide a satisfactory response within 30 to 60 days, file an official consumer complaint directly with the <a href="https://www.transportation.gov/airconsumer/file-consumer-complaint" target="_blank" rel="noopener" style="color:#0284c7;font-weight:bold;">US DOT Aviation Consumer Protection Office</a>.` }
+    { stepNumber: 4, title: `Use the ${country} passenger complaint channel`, instruction: `If ${airlineName} does not provide a satisfactory response, use the passenger protection or aviation complaint channel for ${country}. Check the official regulator guidance for the applicable process and deadlines.` }
   ];
 
   const disputeStepsHtml = disputeSteps.map(step => `
@@ -339,7 +346,7 @@ export function buildHtmlFromSections(
       {
         "@type": "Article",
         "@id": `${canonicalUrl}#article`,
-        "isPartOf": { "@id": "https://easyflightconnectblog.blogspot.com" },
+        "isPartOf": { "@id": socialLinks?.website || "https://easyflightconnectblog.blogspot.com" },
         "headline": title,
         "description": searchDesc,
         "image": bannerImg.startsWith('http') ? bannerImg : "https://easyflightconnectblog.blogspot.com/favicon.ico",
@@ -348,7 +355,7 @@ export function buildHtmlFromSections(
         "publisher": {
           "@type": "Organization",
           "name": publisherName,
-          "url": "https://easyflightconnectblog.blogspot.com"
+          "url": socialLinks?.website || "https://easyflightconnectblog.blogspot.com"
         }
       },
       {
@@ -477,7 +484,7 @@ ${servicesListHtml}
 <ol>
   <li><strong>Telephone Helpline:</strong> For immediate assistance with flight disputes, refunds, or same-day reservations, call <a href="tel:${telLink}" style="color:#0284c7; font-weight:bold;">${cleanTfn}</a>. Live specialists can access global reservations systems in real-time.</li>
   <li><strong>Airport Passenger Desk:</strong> Visit the official airline check-in counter located in the main terminal prior to flight departure.</li>
-  <li><strong>Aviation Consumer Protection:</strong> If unresolved, passengers can file an official complaint via the <a href="https://www.transportation.gov/airconsumer/file-consumer-complaint" target="_blank" rel="noopener" style="color:#0284c7; font-weight:bold;">US Department of Transportation Portal</a>.</li>
+  <li><strong>Regional passenger protection:</strong> If unresolved, use the official aviation complaint channel for ${escapeXml(country)} and keep your booking records.</li>
 </ol>
 
 <h2 id="faq">Frequently Asked Questions (FAQ)</h2>
@@ -500,7 +507,8 @@ export function generateOfficeBlogPost(
   socialLinks?: SocialLinks,
   theme: 'light' | 'dark' = 'light',
   companyName = '',
-  companyLogoUrl = ''
+  companyLogoUrl = '',
+  companyWebsite = ''
 ): GeneratedPost {
   const cleanTfn = tfnNumber.trim() || '+1 (888) 794-3464';
   const city = office.city;
@@ -517,11 +525,17 @@ export function generateOfficeBlogPost(
   
   const postTitle = isDisputeTopic
     ? `${airlineName} ${city} Dispute & Complaint Process: How to File, Compensation & Helpline (2026)`
-    : `${airlineName} ${officeTitle}: Contact Number, Address & Flight Booking (2026 Guide)`;
+    : `${airlineName} ${city} ${defaultKeyword}: Contact Number, Address & Flight Booking (2026 Guide)`;
 
   const permalinkSlug = `${airlineName.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${city.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-office`;
+  const region = country.toLowerCase();
+  const regionalComplaintUrl = region.includes('canada')
+    ? 'https://otc-cta.gc.ca/eng/file-complaint'
+    : region.includes('united kingdom') || region.includes('uk') || region.includes('england')
+      ? 'https://www.caa.co.uk/passengers/resolving-your-flight-problem/'
+      : 'https://www.transportation.gov/airconsumer/file-consumer-complaint';
 
-  const bannerImg = customImageUrl || generateOfficeBannerSvg(airlineName, officeTitle, city, cleanTfn, theme, companyName, companyLogoUrl);
+  const bannerImg = customImageUrl || generateOfficeBannerSvg(airlineName, officeTitle, city, cleanTfn, theme, companyName, companyLogoUrl, companyWebsite || socialLinks?.website || '');
 
   // Search description strictly 150-160 characters for maximum Google search CTR
   const searchDescription = `Complete guide for ${airlineName} ${city} office. Step-by-step dispute filing, compensation, ticket booking & 24/7 customer helpline ${cleanTfn}.`.slice(0, 160);
@@ -557,16 +571,16 @@ export function generateOfficeBlogPost(
       maxImagePreview: true
     },
     authorityLinks: {
-      dotComplaintUrl: 'https://www.transportation.gov/airconsumer/file-consumer-complaint',
+      dotComplaintUrl: regionalComplaintUrl,
       airlineOfficialUrl: socialLinks?.website || 'https://www.google.com/search?q=' + encodeURIComponent(`${airlineName} official website`),
-      internalDirectoryUrl: 'https://easyflightconnectblog.blogspot.com/'
+      internalDirectoryUrl: socialLinks?.website || companyWebsite || 'https://easyflightconnectblog.blogspot.com/'
     }
   };
 
   const defaultSections: PostSections = {
     urgentCalloutTitle: '24/7 Priority Travel Assistance & Dispute Helpline',
     urgentCalloutDesc: `Need immediate assistance with your ${airlineName} dispute, flight reservations, same-day cancellations, name corrections, or lost luggage at the ${city} office? Connect with a live travel specialist instantly:`,
-    overviewPara1: `Whether you are filing a formal dispute or planning a journey departing from ${city} (${country}), the ${airlineName} ${officeTitle} acts as the central service and liaison point for regional and international travelers. As airline operations evolve in 2026, having direct access to verified contact details, terminal hours, and passenger rights is crucial to avoiding unnecessary airport delays.`,
+    overviewPara1: `${companyName ? `${companyName} provides this independent passenger guide for ` : ''}Whether you are filing a formal dispute or planning a journey departing from ${city} (${country}), the ${airlineName} ${officeTitle} acts as the central service and liaison point for regional and international travelers. This guide focuses on ${defaultKeyword} and the practical details passengers should confirm before travel.`,
     overviewPara2: `Passengers visiting or calling the ${city} customer support center can obtain tailored guidance regarding flight cancellations, missed connection compensation, unaccompanied minors, pet cargo policies, and dispute resolution.`,
     officeHours: 'Monday to Sunday: 24 Hours / Terminal Check-in Windows',
     officeAddress: `${officeTitle}, Main Passenger Terminal, ${city}, ${country}`,
@@ -595,7 +609,7 @@ export function generateOfficeBlogPost(
       { stepNumber: 1, title: 'Gather Passenger Documentation & PIR Reference', instruction: `Collect your 6-character PNR booking reference, e-ticket copy, boarding pass, and baggage Property Irregularity Report (PIR) receipt issued by ${airlineName} ground staff.` },
       { stepNumber: 2, title: `Contact ${airlineName} Immediate Dispute Line`, instruction: `Call the 24/7 customer resolution hotline at ${cleanTfn} to speak directly with an escalated ticketing agent for same-day rebooking, flight voucher issues, or refund claims.` },
       { stepNumber: 3, title: 'Submit Formal Electronic Claim to Carrier Relations', instruction: `Submit your formal claim through the airline dispute portal within 30 days of the incident, specifying exact flight numbers and monetary claim amounts.` },
-      { stepNumber: 4, title: 'Escalate to the US Department of Transportation (DOT)', instruction: `If ${airlineName} does not provide a satisfactory response within 30 to 60 days, file an official consumer complaint directly with the US DOT Aviation Consumer Protection Office.` }
+      { stepNumber: 4, title: `Use the ${country} passenger complaint channel`, instruction: `If ${airlineName} does not provide a satisfactory response, use the passenger protection or aviation complaint channel for ${country}. Check the official regulator guidance for the applicable process and deadlines.` }
     ]
   };
 
