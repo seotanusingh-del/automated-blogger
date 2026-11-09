@@ -201,6 +201,11 @@ export default function App() {
   const [savedTemplates, setSavedTemplates] = useState<SavedTemplate[]>(() => {
     try { return JSON.parse(localStorage.getItem('easyflight_saved_templates') || '[]'); } catch { return []; }
   });
+  const [templateNameInput, setTemplateNameInput] = useState('');
+  const [templateTitleInput, setTemplateTitleInput] = useState('');
+  const [templateKeywordInput, setTemplateKeywordInput] = useState('');
+  const [templateHtmlInput, setTemplateHtmlInput] = useState('');
+  const [draftNameInput, setDraftNameInput] = useState('');
   const [supabaseDrafts, setSupabaseDrafts] = useState<SavedTemplate[]>([]);
   const [isLoadingSupabaseDrafts, setIsLoadingSupabaseDrafts] = useState(false);
   const [showDraftPicker, setShowDraftPicker] = useState(false);
@@ -630,6 +635,33 @@ export default function App() {
 
   const removeCustomImage = (index: number) => setCustomImages(current => current.filter((_, i) => i !== index));
 
+  const createStarterPost = (kind: 'draft' | 'template'): GeneratedPost => {
+    const entryName = companyName.trim() || (blogType === 'hotels' ? 'Hotel brand' : blogType === 'travel' ? 'Travel brand' : 'SEO client');
+    const entry: AirlineItem = { id: `${kind}-${Date.now()}`, name: entryName, offices: [], selected: true };
+    const office: AirlineOffice = { id: `${kind}-location`, name: 'Location placeholder', city: 'Your City', country: 'Your Country' };
+    return generateOfficeBlogPost(entry, office, targetKeyword.trim() || 'Your target keyword', commonTfn, customImages[0], socialLinks, isDarkMode ? 'dark' : 'light', companyName, companyLogoUrl, socialLinks.website);
+  };
+
+  const saveNewTemplate = () => {
+    const base = createStarterPost('template');
+    const templateName = templateNameInput.trim() || `${blogType} reusable template`;
+    const template: SavedTemplate = {
+      ...base,
+      id: `template-${Date.now()}`,
+      templateName,
+      title: templateTitleInput.trim() || base.title,
+      keyword: templateKeywordInput.trim() || targetKeyword.trim() || base.keyword,
+      htmlContent: templateHtmlInput.trim() || base.htmlContent,
+      status: 'Draft'
+    };
+    setSavedTemplates(current => [template, ...current.filter(item => item.templateName !== templateName)]);
+    setTemplateNameInput('');
+    setTemplateTitleInput('');
+    setTemplateKeywordInput('');
+    setTemplateHtmlInput('');
+    setStatusMessage(`Template "${templateName}" saved and ready to reuse.`);
+  };
+
   const saveActiveAsTemplate = () => {
     if (!activePost) return;
     const name = prompt('Name this reusable draft template:', `${activePost.airlineName} ${activePost.keyword}`);
@@ -640,6 +672,7 @@ export default function App() {
       status: 'Draft' as const,
       templateName: name.trim()
     };
+
     setSavedTemplates(current => [template, ...current.filter(item => item.templateName !== template.templateName)]);
     setStatusMessage(`Saved template "${name.trim()}".`);
   };
@@ -728,6 +761,17 @@ export default function App() {
     if (activePost?.id === id) setCurrentPostIndex(0);
   };
 
+  const createDraftFromScratch = () => {
+    const draft = createStarterPost('draft');
+    draft.title = draftNameInput.trim() || draft.title;
+    draft.status = 'Draft';
+    setGeneratedPosts(current => [...current, draft]);
+    setCurrentPostIndex(generatedPosts.length);
+    setDraftNameInput('');
+    setActiveSection('drafts');
+    setStatusMessage('New standalone draft created. Select it below to edit and save.');
+  };
+
   const createBlankDraft = () => {
     const airline = selectedAirlines[0] || airlines[0] || {
       id: `custom-${Date.now()}`,
@@ -735,6 +779,7 @@ export default function App() {
       offices: [],
       selected: true
     };
+
     const office = airline.offices[0] || {
       id: `${airline.id}-draft`,
       name: `${airline.name} Office`,
@@ -2092,13 +2137,36 @@ export default function App() {
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <p className="text-xs font-bold">Draft &amp; Template Manager</p>
-                    <p className="text-[11px] text-slate-500">Create, edit, duplicate, save, reuse, and remove complete blog drafts before publishing.</p>
+                    <p className="text-[11px] text-slate-500">Create and manage reusable templates and independent drafts without generating a blog first.</p>
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <span className="rounded-lg bg-slate-500/10 px-2.5 py-1.5 text-[11px] font-semibold text-slate-500">{generatedPosts.filter(post => post.status === 'Draft').length} drafts · {savedTemplates.length} templates</span>
-                    <button type="button" onClick={createBlankDraft} className="rounded-lg border border-slate-300 px-2.5 py-1.5 text-[11px] font-semibold dark:border-slate-700"><Plus className="mr-1 inline h-3 w-3" />New draft</button>
-                    <button type="button" onClick={createTemplateFromScratch} className="rounded-lg border border-violet-300 px-2.5 py-1.5 text-[11px] font-semibold text-violet-700 dark:text-violet-300"><Plus className="mr-1 inline h-3 w-3" />New template</button>
+                    <button type="button" onClick={createDraftFromScratch} className="rounded-lg border border-slate-300 px-2.5 py-1.5 text-[11px] font-semibold dark:border-slate-700"><Plus className="mr-1 inline h-3 w-3" />Create draft</button>
                     <button type="button" onClick={saveActiveAsTemplate} disabled={!activePost} className="rounded-lg bg-sky-600 px-2.5 py-1.5 text-[11px] font-semibold text-white disabled:opacity-50">Save active template</button>
+                  </div>
+                </div>
+                <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                  <div className={`rounded-xl border p-4 ${isDarkMode ? 'border-violet-900/60 bg-violet-950/20' : 'border-violet-200 bg-violet-50'}`}>
+                    <div className="flex items-center justify-between gap-2">
+                      <div><p className="text-xs font-black">Create a reusable template</p><p className="mt-1 text-[11px] text-slate-500">Build once, then use it for any selected Step 2 entries.</p></div>
+                      <FileCode className="h-5 w-5 text-violet-500" />
+                    </div>
+                    <div className="mt-3 space-y-2">
+                      <input value={templateNameInput} onChange={event => setTemplateNameInput(event.target.value)} placeholder="Template name" className={`w-full rounded-lg border p-2 text-xs ${isDarkMode ? 'border-slate-800 bg-slate-950 text-white' : 'border-slate-300 bg-white'}`} />
+                      <input value={templateTitleInput} onChange={event => setTemplateTitleInput(event.target.value)} placeholder="Default article title (optional)" className={`w-full rounded-lg border p-2 text-xs ${isDarkMode ? 'border-slate-800 bg-slate-950 text-white' : 'border-slate-300 bg-white'}`} />
+                      <input value={templateKeywordInput} onChange={event => setTemplateKeywordInput(event.target.value)} placeholder="Target keyword or topic" className={`w-full rounded-lg border p-2 text-xs ${isDarkMode ? 'border-slate-800 bg-slate-950 text-white' : 'border-slate-300 bg-white'}`} />
+                      <textarea value={templateHtmlInput} onChange={event => setTemplateHtmlInput(event.target.value)} rows={6} placeholder="Template HTML. Use {{entry}} or {{brand}} where the selected entry name should appear." className={`w-full resize-y rounded-lg border p-2 font-mono text-[11px] ${isDarkMode ? 'border-slate-800 bg-slate-950 text-white' : 'border-slate-300 bg-white'}`} />
+                      <button type="button" onClick={saveNewTemplate} className="rounded-lg bg-violet-600 px-3 py-2 text-[11px] font-bold text-white hover:bg-violet-500">Save new template</button>
+                    </div>
+                  </div>
+                  <div className={`rounded-xl border p-4 ${isDarkMode ? 'border-slate-800 bg-slate-900' : 'border-slate-200 bg-white'}`}>
+                    <div className="flex items-center justify-between gap-2">
+                      <div><p className="text-xs font-black">Create a standalone draft</p><p className="mt-1 text-[11px] text-slate-500">Start an editable draft without selecting a generated blog.</p></div>
+                      <FileCode className="h-5 w-5 text-sky-500" />
+                    </div>
+                    <input value={draftNameInput} onChange={event => setDraftNameInput(event.target.value)} placeholder="Draft name or title (optional)" className={`mt-3 w-full rounded-lg border p-2 text-xs ${isDarkMode ? 'border-slate-800 bg-slate-950 text-white' : 'border-slate-300 bg-white'}`} />
+                    <button type="button" onClick={createDraftFromScratch} className="mt-2 rounded-lg bg-sky-600 px-3 py-2 text-[11px] font-bold text-white hover:bg-sky-500">Create editable draft</button>
+                    <p className="mt-3 text-[11px] text-slate-500">After creation, select the draft below to edit its title, keyword, status, and complete HTML.</p>
                   </div>
                 </div>
                 <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
