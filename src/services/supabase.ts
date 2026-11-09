@@ -41,20 +41,38 @@ export async function uploadImageToPublicBucket(file: Blob, filename: string): P
 }
 
 async function listImagesThroughApi(prefix: string): Promise<string[]> {
-  const response = await fetch(`/api/storage/images?prefix=${encodeURIComponent(prefix)}`);
+  const customKey = typeof window !== 'undefined' ? localStorage.getItem('easyflight_supabase_service_key') || '' : '';
+  const response = await fetch(`/api/storage/images?prefix=${encodeURIComponent(prefix)}`, {
+    headers: customKey ? { 'x-supabase-key': customKey } : undefined
+  });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data.error || 'Public image library could not be loaded.');
   return Array.isArray(data.images) ? data.images : [];
 }
 
 async function uploadImageThroughApi(file: Blob, filename: string): Promise<string> {
-  const bytes = new Uint8Array(await file.arrayBuffer());
-  let binary = '';
-  bytes.forEach(byte => { binary += String.fromCharCode(byte); });
+  const customKey = typeof window !== 'undefined' ? localStorage.getItem('easyflight_supabase_service_key') || '' : '';
+  
+  // Robust base64 conversion for larger files
+  const data = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      const base64 = result.split(',')[1];
+      if (base64) resolve(base64);
+      else reject(new Error('Could not convert image to base64.'));
+    };
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+
   const response = await fetch('/api/storage/upload', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ filename, contentType: file.type || 'image/png', data: btoa(binary) })
+    headers: { 
+      'Content-Type': 'application/json',
+      ...(customKey ? { 'x-supabase-key': customKey } : {})
+    },
+    body: JSON.stringify({ filename, contentType: file.type || 'image/png', data })
   });
   const result = await response.json().catch(() => ({}));
   if (!response.ok || !result.url) throw new Error(result.error || 'Image upload failed. Check Supabase storage credentials and bucket policies.');
@@ -125,10 +143,10 @@ export async function getBlogTableDrafts(limit = 100): Promise<StoredBlogDraft[]
 }
 
 export async function createPendingBlogRequest(request: BlogRequestInput & { immediateBlog?: any }): Promise<BlogRequestInput & { immediateBlog?: any }> {
-  const customKey = typeof window !== 'undefined' ? localStorage.getItem('easyflight_custom_supabase_key') || '' : '';
+  const customKey = typeof window !== 'undefined' ? localStorage.getItem('easyflight_supabase_service_key') || '' : '';
   const n8nWebhookUrl = typeof window !== 'undefined' ? localStorage.getItem('easyflight_n8n_webhook') || '' : '';
   const n8nMcpUrl = typeof window !== 'undefined' ? localStorage.getItem('easyflight_n8n_mcp') || '' : '';
-  const n8nApiKey = typeof window !== 'undefined' ? localStorage.getItem('easyflight_n8n_api_key') || '' : '';
+  const n8nApiKey = typeof window !== 'undefined' ? localStorage.getItem('easyflight_n8n_apikey') || '' : '';
 
   // 1. Try server-side proxy route first (clears previous rows & inserts single pending row)
   try {
@@ -180,7 +198,7 @@ export async function createPendingBlogRequest(request: BlogRequestInput & { imm
 }
 
 export async function getBlogsForRequest(requestId: string): Promise<StoredBlogDraft[]> {
-  const customKey = typeof window !== 'undefined' ? localStorage.getItem('easyflight_custom_supabase_key') || '' : '';
+  const customKey = typeof window !== 'undefined' ? localStorage.getItem('easyflight_supabase_service_key') || '' : '';
 
   // 1. Try server-side status endpoint first
   try {

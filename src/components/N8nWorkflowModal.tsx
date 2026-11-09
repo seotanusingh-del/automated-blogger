@@ -226,57 +226,61 @@ grant all on table public.blogs to anon, authenticated, service_role;`;
       }`}>
         
         {/* Header */}
-        <div className="flex items-start justify-between pb-4 border-b border-slate-800 gap-3">
+        <div className={`flex items-start justify-between pb-4 border-b gap-3 ${
+          isDarkMode ? 'border-slate-800' : 'border-slate-100'
+        }`}>
           <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-xl bg-violet-500/10 text-violet-400 border border-violet-500/20">
+            <div className="p-2 rounded-xl bg-violet-500/10 text-violet-500 border border-violet-500/20">
               <Zap className="w-5 h-5" />
             </div>
             <div>
               <h2 className="text-base font-bold">n8n Workflow &amp; Supabase Integration</h2>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
+              <p className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                 End-to-end automation connecting Step 2 with your n8n workflow, MCP server, and Supabase database.
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition"
+            className={`p-1 rounded-lg transition ${
+              isDarkMode ? 'text-slate-400 hover:text-white hover:bg-slate-800' : 'text-slate-400 hover:text-slate-900 hover:bg-slate-100'
+            }`}
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Content Body */}
-        <div className="flex-1 overflow-y-auto py-4 space-y-4 pr-1">
+        <div className="flex-1 overflow-y-auto py-4 space-y-4 pr-1 scrollbar-thin scrollbar-thumb-slate-300 dark:scrollbar-thumb-slate-700">
 
           {/* Workflow Architecture Diagram / Steps */}
-          <div className={`p-3.5 rounded-xl border text-xs space-y-2 ${
+          <div className={`p-4 rounded-xl border text-xs space-y-2.5 ${
             isDarkMode ? 'bg-slate-950/70 border-slate-800' : 'bg-slate-50 border-slate-200'
           }`}>
-            <div className="font-bold text-violet-400 flex items-center gap-1.5">
+            <div className={`font-bold flex items-center gap-1.5 ${isDarkMode ? 'text-violet-400' : 'text-violet-700'}`}>
               <Bot className="w-4 h-4" />
               <span>How the n8n + Supabase Loop Works:</span>
             </div>
-            <ol className="list-decimal list-inside space-y-1 text-slate-400 dark:text-slate-300 text-[11px]">
+            <ol className={`list-decimal list-inside space-y-1.5 text-[11px] ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
               <li>
-                Clicking <strong className="text-violet-300">⚡ Run n8n Workflow</strong> clears previous rows and inserts <strong>exactly 1 pending row</strong> into Supabase table <code className="text-sky-300">requests</code> (and <code className="text-sky-300">user_blog_requests</code>).
+                Clicking <strong className={isDarkMode ? 'text-violet-300' : 'text-violet-600'}>⚡ Run n8n Workflow</strong> clears previous rows and inserts <strong>exactly 1 pending row</strong> into Supabase table <code className={isDarkMode ? 'text-sky-300' : 'text-sky-700'}>requests</code>.
               </li>
               <li>
-                The app calls your n8n Webhook &amp; MCP endpoint with the job payload. If n8n listens to database row changes on <code className="text-sky-300">status = 'pending'</code>, it triggers automatically!
+                The app calls your n8n Webhook &amp; MCP endpoint. If n8n listens to database row changes on <code className={isDarkMode ? 'text-sky-300' : 'text-sky-700'}>status = 'pending'</code>, it triggers automatically!
               </li>
               <li>
-                n8n processes the topic/keyword, generates the blog, and saves it into the Supabase <code className="text-sky-300">blogs</code> table (with <code className="text-sky-300">request_id</code>).
+                n8n processes the topic, generates the blog, and saves it into the Supabase <code className={isDarkMode ? 'text-sky-300' : 'text-sky-700'}>blogs</code> table.
               </li>
               <li>
-                The tool polls the <code className="text-sky-300">blogs</code> table, fetches the generated blog, interpolates it across all selected entities (<code className="text-emerald-300">{"{{airline}}"}</code>, <code className="text-emerald-300">{"{{city}}"}</code>), and automatically presents it in the Review Queue!
+                The tool polls the <code className={isDarkMode ? 'text-sky-300' : 'text-sky-700'}>blogs</code> table, fetches the blog, and presents it in the Review Queue!
               </li>
             </ol>
           </div>
 
           {/* n8n Configuration Fields */}
-          <div className="space-y-3">
+          <div className="space-y-4">
             <div>
-              <label className="block text-xs font-bold mb-1">
+              <label className="block text-xs font-bold mb-1.5 opacity-70 uppercase tracking-wider">
                 n8n Webhook URL (Production / Test)
               </label>
               <input
@@ -287,17 +291,17 @@ grant all on table public.blogs to anon, authenticated, service_role;`;
                   localStorage.setItem('easyflight_n8n_webhook', e.target.value);
                 }}
                 placeholder="https://automated-blogger.app.n8n.cloud/webhook/seo-blog-generator"
-                className={`w-full text-xs font-mono rounded-lg p-2.5 border outline-none ${
-                  isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-300 text-slate-800'
+                className={`w-full text-xs font-mono rounded-lg p-2.5 border outline-none transition ${
+                  isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-violet-500' : 'bg-slate-50 border-slate-200 text-slate-800 focus:border-violet-500 focus:bg-white'
                 }`}
               />
-              <span className="text-[10px] text-slate-500 mt-0.5 block">
+              <span className="text-[10px] text-slate-500 mt-1 block leading-relaxed">
                 Called via HTTP POST when you click "Run n8n Workflow".
               </span>
             </div>
 
             <div>
-              <label className="block text-xs font-bold mb-1">
+              <label className="block text-xs font-bold mb-1.5 opacity-70 uppercase tracking-wider">
                 n8n MCP Server URL (Model Context Protocol)
               </label>
               <input
@@ -308,18 +312,18 @@ grant all on table public.blogs to anon, authenticated, service_role;`;
                   localStorage.setItem('easyflight_n8n_mcp', e.target.value);
                 }}
                 placeholder="https://automated-blogger.app.n8n.cloud/mcp-server/http"
-                className={`w-full text-xs font-mono rounded-lg p-2.5 border outline-none ${
-                  isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-300 text-slate-800'
+                className={`w-full text-xs font-mono rounded-lg p-2.5 border outline-none transition ${
+                  isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-violet-500' : 'bg-slate-50 border-slate-200 text-slate-800 focus:border-violet-500 focus:bg-white'
                 }`}
               />
-              <span className="text-[10px] text-slate-500 mt-0.5 block">
-                Called via JSON-RPC 2.0 protocol on <code className="text-violet-400">tools/call</code> and <code className="text-violet-400">notifications</code>.
+              <span className="text-[10px] text-slate-500 mt-1 block leading-relaxed">
+                Called via JSON-RPC 2.0 protocol on <code className="text-violet-500 font-bold">tools/call</code>.
               </span>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-bold mb-1">
+                <label className="block text-xs font-bold mb-1.5 opacity-70 uppercase tracking-wider">
                   n8n API Key (Optional)
                 </label>
                 <input
@@ -330,14 +334,14 @@ grant all on table public.blogs to anon, authenticated, service_role;`;
                     localStorage.setItem('easyflight_n8n_api_key', e.target.value);
                   }}
                   placeholder="n8n_api_..."
-                  className={`w-full text-xs font-mono rounded-lg p-2.5 border outline-none ${
-                    isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-300 text-slate-800'
+                  className={`w-full text-xs font-mono rounded-lg p-2.5 border outline-none transition ${
+                    isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-violet-500' : 'bg-slate-50 border-slate-200 text-slate-800 focus:border-violet-500 focus:bg-white'
                   }`}
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-bold mb-1">
+                <label className="block text-xs font-bold mb-1.5 opacity-70 uppercase tracking-wider">
                   Supabase Key Override (Optional)
                 </label>
                 <input
@@ -345,11 +349,11 @@ grant all on table public.blogs to anon, authenticated, service_role;`;
                   value={supabaseCustomKey}
                   onChange={(e) => {
                     onChangeSupabaseCustomKey(e.target.value);
-                    localStorage.setItem('easyflight_custom_supabase_key', e.target.value);
+                    localStorage.setItem('easyflight_supabase_service_key', e.target.value);
                   }}
                   placeholder="eyJhbGciOi..."
-                  className={`w-full text-xs font-mono rounded-lg p-2.5 border outline-none ${
-                    isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-300 text-slate-800'
+                  className={`w-full text-xs font-mono rounded-lg p-2.5 border outline-none transition ${
+                    isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-sky-500' : 'bg-slate-50 border-slate-200 text-slate-800 focus:border-sky-500 focus:bg-white'
                   }`}
                 />
               </div>
@@ -362,52 +366,60 @@ grant all on table public.blogs to anon, authenticated, service_role;`;
               type="button"
               onClick={handleTestConnections}
               disabled={isTesting}
-              className="w-full py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold transition flex items-center justify-center gap-2 shadow"
+              className="w-full py-3 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold transition flex items-center justify-center gap-2 shadow-lg shadow-violet-600/20 active:scale-[0.98]"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isTesting ? 'animate-spin' : ''}`} />
               <span>{isTesting ? 'Testing all connections...' : '🔌 Test Connections Now'}</span>
             </button>
 
             {testResults && (
-              <div className="mt-3 p-3 rounded-xl border border-slate-800 bg-slate-950 space-y-2 text-xs">
-                <div className="font-bold text-slate-300 flex items-center justify-between">
-                  <span>Connection Test Report:</span>
+              <div className={`mt-4 p-4 rounded-xl border space-y-3 text-xs animate-in slide-in-from-top-2 ${
+                isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'
+              }`}>
+                <div className={`font-bold opacity-70 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
+                  Connection Test Report:
                 </div>
                 
                 {/* Supabase Status */}
-                <div className="flex items-center justify-between text-[11px] p-1.5 rounded bg-slate-900 border border-slate-800">
+                <div className={`flex items-center justify-between text-[11px] p-2.5 rounded border transition ${
+                  isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-sm'
+                }`}>
                   <div className="flex items-center gap-2">
-                    <Database className="w-3.5 h-3.5 text-emerald-400" />
+                    <Database className="w-3.5 h-3.5 text-emerald-500" />
                     <span>Supabase requests Table:</span>
                   </div>
-                  <span className={`px-2 py-0.5 rounded font-bold ${
-                    testResults.supabaseOk ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400'
+                  <span className={`px-2.5 py-0.5 rounded font-bold ${
+                    testResults.supabaseOk ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
                   }`}>
                     {testResults.supabaseOk ? '✅ Accessible' : '⚠️ Unverified'}
                   </span>
                 </div>
 
                 {/* n8n Webhook Status */}
-                <div className="flex items-center justify-between text-[11px] p-1.5 rounded bg-slate-900 border border-slate-800">
+                <div className={`flex items-center justify-between text-[11px] p-2.5 rounded border transition ${
+                  isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-sm'
+                }`}>
                   <div className="flex items-center gap-2">
-                    <Zap className="w-3.5 h-3.5 text-violet-400" />
+                    <Zap className="w-3.5 h-3.5 text-violet-500" />
                     <span>n8n Webhook:</span>
                   </div>
-                  <span className={`px-2 py-0.5 rounded font-bold ${
-                    testResults.webhookOk ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'
+                  <span className={`px-2.5 py-0.5 rounded font-bold ${
+                    testResults.webhookOk ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-rose-500/10 text-rose-600 dark:text-rose-400'
                   }`}>
                     {testResults.webhookOk ? `✅ Connected (${testResults.webhookStatus || 200})` : `⚠️ ${testResults.webhookMessage || 'Check URL'}`}
                   </span>
                 </div>
 
                 {/* n8n MCP Status */}
-                <div className="flex items-center justify-between text-[11px] p-1.5 rounded bg-slate-900 border border-slate-800">
+                <div className={`flex items-center justify-between text-[11px] p-2.5 rounded border transition ${
+                  isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-sm'
+                }`}>
                   <div className="flex items-center gap-2">
-                    <Bot className="w-3.5 h-3.5 text-sky-400" />
+                    <Bot className="w-3.5 h-3.5 text-sky-500" />
                     <span>n8n MCP Server:</span>
                   </div>
-                  <span className={`px-2 py-0.5 rounded font-bold ${
-                    testResults.mcpOk ? 'bg-emerald-500/20 text-emerald-400' : 'bg-sky-500/20 text-sky-400'
+                  <span className={`px-2.5 py-0.5 rounded font-bold ${
+                    testResults.mcpOk ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-sky-500/10 text-sky-600 dark:text-sky-400'
                   }`}>
                     {testResults.mcpOk ? `✅ Responded (${testResults.mcpStatus || 200})` : `ℹ️ ${testResults.mcpMessage || 'HTTP JSON-RPC Ready'}`}
                   </span>
@@ -417,39 +429,43 @@ grant all on table public.blogs to anon, authenticated, service_role;`;
           </div>
 
           {/* Copy SQL Schema Box */}
-          <div className="pt-2 border-t border-slate-800 space-y-2">
+          <div className={`pt-4 border-t space-y-3 ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
             <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-slate-300">Supabase SQL Schema</span>
+              <span className={`text-xs font-bold ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>Supabase SQL Schema</span>
               <button
                 type="button"
                 onClick={copySqlSchema}
-                className="px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold flex items-center gap-1.5 transition"
+                className="px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold flex items-center gap-1.5 transition shadow-lg shadow-sky-600/20"
               >
                 {copiedSql ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                <span>{copiedSql ? 'Copied to Clipboard!' : 'Copy SQL Schema'}</span>
+                <span>{copiedSql ? 'Copied!' : 'Copy SQL Schema'}</span>
               </button>
             </div>
-            <p className="text-[11px] text-slate-400">
-              Paste this into your Supabase SQL Editor. It creates tables <code className="text-sky-300">requests</code>, <code className="text-sky-300">user_blog_requests</code>, <code className="text-sky-300">"User blog request"</code>, and <code className="text-sky-300">blogs</code> with full RLS and open permissions.
+            <p className={`text-[11px] leading-relaxed ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+              Paste this into your Supabase SQL Editor. It creates tables <code className={isDarkMode ? 'text-sky-300' : 'text-sky-700 font-bold'}>requests</code>, <code className={isDarkMode ? 'text-sky-300' : 'text-sky-700 font-bold'}>blogs</code>, etc., with full RLS and open permissions.
             </p>
           </div>
 
         </div>
 
         {/* Modal Footer */}
-        <div className="pt-3 border-t border-slate-800 flex items-center justify-between">
+        <div className={`pt-4 border-t flex items-center justify-between ${
+          isDarkMode ? 'border-slate-800' : 'border-slate-100'
+        }`}>
           <a
             href="https://automated-blogger.app.n8n.cloud"
             target="_blank"
             rel="noreferrer"
-            className="text-xs text-violet-400 hover:underline flex items-center gap-1"
+            className="text-xs text-violet-500 hover:underline flex items-center gap-1.5 font-bold"
           >
             Open n8n Dashboard <ExternalLink className="w-3 h-3" />
           </a>
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold transition"
+            className={`px-5 py-2 rounded-lg font-bold text-xs transition ${
+              isDarkMode ? 'bg-slate-800 hover:bg-slate-700 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+            }`}
           >
             Done
           </button>
@@ -457,5 +473,6 @@ grant all on table public.blogs to anon, authenticated, service_role;`;
 
       </div>
     </div>
+
   );
 };

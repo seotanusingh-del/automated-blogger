@@ -31,10 +31,33 @@ const publicStorageUrl = `${storageUrl}/storage/v1/object/public/${storageBucket
 const pollinationsApiKey = process.env.POLLINATIONS_API_KEY || process.env.POLLINATIONS_SECRET_KEY || process.env.VITE_POLLINATIONS_API_KEY || '';
 
 function normalizeAiContent(value: any) {
-  if (!value || typeof value !== 'object' || typeof value.title !== 'string' || typeof value.overview !== 'string' || !Array.isArray(value.services) || !Array.isArray(value.faqs)) {
-    return null;
-  }
-  return value;
+  if (!value || typeof value !== 'object') return null;
+  
+  // Ensure title exists
+  const title = String(value.title || value.headline || '').trim();
+  
+  // Ensure overview is a string or array joined to string
+  let overview = '';
+  if (Array.isArray(value.overview)) overview = value.overview.join('\n\n');
+  else overview = String(value.overview || value.content || value.introduction || '').trim();
+  
+  // Ensure services is an array
+  let services = Array.isArray(value.services) ? value.services : 
+                 Array.isArray(value.features) ? value.features : 
+                 Array.isArray(value.actions) ? value.actions : [];
+  services = services.map((s: any) => String(s).trim()).filter(Boolean);
+  
+  // Ensure faqs is an array of objects
+  let faqs = Array.isArray(value.faqs) ? value.faqs : 
+             Array.isArray(value.questions) ? value.questions : [];
+  faqs = faqs.map((f: any) => ({
+    question: String(f.question || f.q || '').trim(),
+    answer: String(f.answer || f.a || '').trim()
+  })).filter((f: { question: string; answer: string }) => f.question && f.answer);
+
+  if (!title || !overview) return null;
+
+  return { title, overview, services, faqs };
 }
 
 function fallbackAiContent(airlineName: string, city: string, keyword: string, tfn: string, blogType = 'airlines') {
@@ -185,6 +208,27 @@ app.post(['/api/workflow/test-connection', '/workflow/test-connection'], async (
     results.supabase = { ok: false, message: sbErr?.message || 'Supabase unreachable' };
   }
 
+  // 1.1 Test Supabase Storage (DATA bucket)
+  results.supabaseStorage = { ok: false, message: 'Not tested' };
+  try {
+    const storageRes = await fetch(`${storageUrl}/storage/v1/object/list/${storageBucket}`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${activeKey || 'placeholder'}`,
+        apikey: activeKey || 'placeholder',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ prefix: '', limit: 1 })
+    });
+    results.supabaseStorage = {
+      ok: storageRes.ok,
+      status: storageRes.status,
+      message: storageRes.ok ? 'DATA bucket accessible' : `Storage returned ${storageRes.status}`
+    };
+  } catch (storageErr: any) {
+    results.supabaseStorage = { ok: false, message: storageErr?.message || 'Storage unreachable' };
+  }
+
   // 2. Test n8n Webhook
   try {
     const wbHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -260,15 +304,20 @@ app.post(['/api/workflow/trigger', '/workflow/trigger'], async (req, res) => {
         'Content-Type': 'application/json'
       };
 
-      const tableNames = ['requests', 'request', 'user_blog_requests', encodeURIComponent('User blog request')];
-      await Promise.all(tableNames.map(tbl => 
-        fetch(`${storageUrl}/rest/v1/${tbl}?id=not.is.null`, {
-          method: 'DELETE',
-          headers: deleteHeaders
-        }).catch(() => {})
-      ));
+      const tableNames = ['requests', 'request', 'user_blog_requests', 'User blog request', 'User blog requests'];
+      await Promise.all(tableNames.map(async tbl => {
+        try {
+          await fetch(`${storageUrl}/rest/v1/${encodeURIComponent(tbl)}?id=not.is.null`, {
+            method: 'DELETE',
+            headers: deleteHeaders
+          });
+        } catch (e) {
+          console.warn(`[Supabase Delete Warning for ${tbl}]:`, e);
+        }
+      }));
 
-      // 2. Insert single pending row into requests and alias tables
+      // 2. Insert single pending row into requests table
+      // (Views like "User blog request" will automatically reflect this single row)
       const insertHeaders = {
         Authorization: `Bearer ${serviceKey}`,
         apikey: serviceKey,
@@ -277,24 +326,6 @@ app.post(['/api/workflow/trigger', '/workflow/trigger'], async (req, res) => {
       };
 
       await fetch(`${storageUrl}/rest/v1/requests`, {
-        method: 'POST',
-        headers: insertHeaders,
-        body: JSON.stringify(record)
-      }).catch(() => {});
-
-      await fetch(`${storageUrl}/rest/v1/user_blog_requests`, {
-        method: 'POST',
-        headers: insertHeaders,
-        body: JSON.stringify(record)
-      }).catch(() => {});
-
-      await fetch(`${storageUrl}/rest/v1/${encodeURIComponent('User blog request')}`, {
-        method: 'POST',
-        headers: insertHeaders,
-        body: JSON.stringify(record)
-      }).catch(() => {});
-
-      await fetch(`${storageUrl}/rest/v1/request`, {
         method: 'POST',
         headers: insertHeaders,
         body: JSON.stringify(record)
@@ -324,6 +355,8 @@ app.post(['/api/workflow/trigger', '/workflow/trigger'], async (req, res) => {
         data: record
       };
 
+      console.log(`[n8n Webhook Triggering]: ${n8nWebhook}`, JSON.stringify(webhookPayload, null, 2));
+
       const wbRes = await fetch(n8nWebhook, {
         method: 'POST',
         headers: n8nHeaders,
@@ -332,9 +365,13 @@ app.post(['/api/workflow/trigger', '/workflow/trigger'], async (req, res) => {
 
       if (wbRes.ok) {
         const wbData = await wbRes.json().catch(() => null);
+        console.log('[n8n Webhook Response]:', wbData);
         if (wbData && (wbData.title || wbData.content_html || wbData.content || wbData.output)) {
           immediateBlog = wbData.output || wbData;
         }
+      } else {
+        const wbErrText = await wbRes.text().catch(() => 'No error body');
+        console.warn(`[n8n Webhook Error ${wbRes.status}]:`, wbErrText);
       }
     } catch (wbErr) {
       console.warn('[n8n Webhook Ping Warning]:', wbErr);

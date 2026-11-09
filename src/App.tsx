@@ -216,7 +216,7 @@ export default function App() {
   const [contactEmail, setContactEmail] = useState<string>(() => {
     try { return JSON.parse(localStorage.getItem('easyflight_session_draft') || '{}').contactEmail || ''; } catch { return ''; }
   });
-  const [activeSection, setActiveSection] = useState<'setup' | 'airlines' | 'review' | 'drafts' | 'history'>('setup');
+  const [activeSection, setActiveSection] = useState<'setup' | 'airlines' | 'drafts' | 'review' | 'history'>('setup');
   const [blogType, setBlogType] = useState<BlogType>(() => (localStorage.getItem('easyflight_blog_type') as BlogType) || 'airlines');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [historyFilter, setHistoryFilter] = useState('');
@@ -345,7 +345,7 @@ export default function App() {
   const [bulkProgress, setBulkProgress] = useState<{ current: number; total: number; currentTitle?: string } | null>(null);
 
   const activePost = generatedPosts[currentPostIndex] || null;
-  const workflowSteps = ['setup', 'airlines', 'review', 'drafts', 'history'] as const;
+  const workflowSteps = ['setup', 'airlines', 'drafts', 'review', 'history'] as const;
   const goToWorkflowStep = (direction: 1 | -1) => {
     const current = workflowSteps.indexOf(activeSection);
     const next = Math.min(workflowSteps.length - 1, Math.max(0, current + direction));
@@ -1045,9 +1045,11 @@ export default function App() {
       setGeneratedPosts(queue);
       setCurrentPostIndex(0);
       setActiveSection('review');
+      addLog('workflow', 'success', 'Queue Populated', `Added ${queue.length} articles to review queue via n8n.`);
       setStatusMessage(`⚡ n8n workflow generated blog successfully! Created ${queue.length} review-ready post${queue.length === 1 ? '' : 's'}.`);
     } catch (error) {
       console.error('n8n workflow generation failed:', error);
+      addLog('workflow', 'error', 'Workflow Failed', error instanceof Error ? error.message : 'Unknown error');
       setStatusMessage(error instanceof Error ? error.message : 'n8n workflow generation failed.');
     } finally {
       setIsGeneratingBulk(false);
@@ -1129,9 +1131,11 @@ export default function App() {
       const finalPosts = [...generatedPosts];
       finalPosts[index] = finalPost;
       setGeneratedPosts(finalPosts);
+      addLog('ai', 'success', 'Single AI Post Ready', `${post.airlineName} article rewritten using ${aiProvider}.`);
       setStatusMessage(`AI Generation Complete for ${post.airlineName}!`);
     } catch (error) {
       console.error('AI Generation failed:', error);
+      addLog('ai', 'error', 'AI Post Failed', `Failed for ${post.airlineName}: ${error instanceof Error ? error.message : 'Unknown error'}`);
       setStatusMessage(error instanceof Error ? `AI generation issue: ${error.message}` : 'AI generation failed; keyword fallback was unavailable.');
       const fallbackPosts = [...generatedPosts];
       fallbackPosts[index] = { ...post, status: 'Error' };
@@ -1248,8 +1252,8 @@ export default function App() {
       }
     }
 
-    setIsGeneratingBulk(false);
     setBulkProgress(null);
+    addLog('ai', 'success', 'Bulk Generation Finished', `Successfully synthesized ${workingPosts.length} unique articles.`);
     setStatusMessage(`Bulk AI Generation Complete! ${workingPosts.length} posts generated with unique ${aiProvider} content.`);
     setTimeout(() => setStatusMessage(null), 5000);
   };
@@ -1282,15 +1286,27 @@ export default function App() {
 
   const makePostPublishable = async (post: GeneratedPost): Promise<GeneratedPost> => {
     if (!post.imageUrl.startsWith('data:')) return post;
-    const response = await fetch(post.imageUrl);
-    const blob = await response.blob();
-    const extension = blob.type.split('/')[1] || 'png';
-    const publicUrl = await uploadImageToPublicBucket(blob, `${post.airlineName}-${post.city}-blog.${extension}`);
-    return {
-      ...post,
-      imageUrl: publicUrl,
-      htmlContent: post.htmlContent.replace(/src="data:image\/[^"]+"/g, `src="${publicUrl}"`)
-    };
+    try {
+      const response = await fetch(post.imageUrl);
+      const blob = await response.blob();
+      // Handle SVG specifically for Blogger compatibility
+      const extension = blob.type.includes('svg') ? 'svg' : (blob.type.split('/')[1] || 'png');
+      const publicUrl = await uploadImageToPublicBucket(blob, `${post.airlineName}-${post.city}-blog.${extension}`);
+      
+      // Replace the specific data URI that matches the banner in the HTML
+      // This is safer than a global greedy replace of all data images
+      const escapedDataUri = post.imageUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const newHtml = post.htmlContent.replace(new RegExp(`src="${escapedDataUri}"`, 'g'), `src="${publicUrl}"`);
+
+      return {
+        ...post,
+        imageUrl: publicUrl,
+        htmlContent: newHtml
+      };
+    } catch (err) {
+      console.error('Failed to make post publishable:', err);
+      return post;
+    }
   };
 
   // Easy Non-Technical Section Update. Shared edits are applied to every
@@ -1384,22 +1400,37 @@ export default function App() {
   const handleCustomImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0 || !activePost) return;
     const file = e.target.files[0];
+    const scope = applyBannerScope;
+    
     void uploadImageToPublicBucket(file, file.name).then(imageUrl => {
       setCustomImages(current => [...current, imageUrl]);
       setImageLibrary(current => [...current, imageUrl]);
-      setGeneratedPosts(posts => posts.map(post => rebuildPost(
-        post,
-        post.sections || activePost.sections!,
-        imageUrl
-      )));
+      
+      setGeneratedPosts(posts => posts.map((post, idx) => {
+        if (scope === 'all' || idx === currentPostIndex) {
+          return rebuildPost(
+            post,
+            post.sections || activePost.sections!,
+            imageUrl
+          );
+        }
+        return post;
+      }));
+      setStatusMessage(`Custom banner applied to ${scope === 'all' ? 'every generated post' : 'this post only'}.`);
     }).catch(error => {
       console.error('Image upload failed:', error);
       const reader = new FileReader();
       reader.onload = () => {
         if (typeof reader.result !== 'string') return;
-        setCustomImages(current => [...current, reader.result as string]);
-        setGeneratedPosts(posts => posts.map(post => rebuildPost(post, post.sections || activePost.sections!, reader.result as string)));
-        setStatusMessage('Storage upload failed; showing a local preview until storage is configured.');
+        const localUrl = reader.result as string;
+        setCustomImages(current => [...current, localUrl]);
+        setGeneratedPosts(posts => posts.map((post, idx) => {
+          if (scope === 'all' || idx === currentPostIndex) {
+            return rebuildPost(post, post.sections || activePost.sections!, localUrl);
+          }
+          return post;
+        }));
+        setStatusMessage('Storage upload failed; using local preview. Configure Supabase storage for production.');
       };
       reader.readAsDataURL(file);
     });
@@ -1541,15 +1572,20 @@ export default function App() {
           airline_name: publishablePost.airlineName,
           city: publishablePost.city
         });
+
+        addLog('blogger', 'success', 'Published to Blogger', `"${publishablePost.title}" is now live.`, liveUrl);
       } else {
         if (data.code === 'REFRESH_TOKEN_EXPIRED' || data.code === 'MISSING_REFRESH_TOKEN' || data.needsConfig) {
           setShowRefreshTokenModal(true);
+          addLog('blogger', 'warning', 'Auth Expired', 'Google token expired during publish.');
           setStatusMessage('Google Refresh Token expired or missing. Please paste a valid token in the modal.');
         } else {
+          addLog('blogger', 'error', 'Publish Failed', data.error || 'Check permissions');
           setStatusMessage(`Publish status: ${data.error || 'Check Blogger Author Permissions'}`);
         }
       }
     } catch (e: any) {
+      addLog('blogger', 'error', 'System Error', e.message);
       setStatusMessage(`Error: ${e.message}`);
     } finally {
       setIsPublishing(false);
@@ -1732,24 +1768,14 @@ export default function App() {
           </div>
         </div>
 
-        {/* Right Header: Service Account Badge, Theme Switcher, Website/Social Links, Account, Lock */}
         <div className="flex items-center gap-3">
           
-          {/* Public Landing Page & Policies Button */}
-          <button
-            onClick={() => setShowPublicPage(true)}
-            className={`px-2.5 py-1.5 rounded-lg border text-xs flex items-center gap-1.5 transition ${
-              isDarkMode 
-                ? 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-sky-400' 
-                : 'bg-white hover:bg-slate-100 border-slate-300 text-sky-700 shadow-sm'
-            }`}
-            title="View Public Landing Page & Policies"
-          >
-            <Globe className="w-3.5 h-3.5" />
-            <span className="font-semibold">Public Page</span>
+          {/* Sidebar Toggle */}
+          <button type="button" onClick={() => setIsSidebarOpen(current => !current)} className={`rounded-lg border p-2 ${isDarkMode ? 'border-slate-700 text-slate-300' : 'border-slate-300 text-slate-700'}`} aria-label="Toggle workflow navigation">
+            <Settings className="h-4 w-4" />
           </button>
-          
-          {/* Google connection status (Green = Active, Yellow = Inactive/Expired) */}
+
+          {/* Google connection status */}
           <button
             onClick={() => setShowRefreshTokenModal(true)}
             className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-bold transition cursor-pointer shadow-sm ${
@@ -1766,59 +1792,9 @@ export default function App() {
           >
             <span className={`h-2.5 w-2.5 rounded-full flex-shrink-0 ${isBackendConnected ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.9)] animate-pulse' : 'bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.9)]'}`} />
             <Key className={`h-3.5 w-3.5 ${isBackendConnected ? 'text-emerald-500' : 'text-amber-500'}`} />
-            <span className="inline font-bold">
+            <span className="hidden sm:inline font-bold">
               {isBackendConnected ? 'Google: Active' : 'Google: Inactive'}
             </span>
-          </button>
-
-
-          <button type="button" onClick={() => setIsSidebarOpen(current => !current)} className="rounded-lg border p-2" aria-label="Toggle workflow navigation">
-            <Settings className="h-4 w-4" />
-          </button>
-          <a href="https://seo-indexer-tool.vercel.app/" target="_blank" rel="noopener noreferrer" className="rounded-lg border p-2 text-sky-600 hover:bg-sky-500/10" aria-label="Open Blogger Indexer" title="Blogger Indexer">
-            <ExternalLink className="h-4 w-4" />
-          </a>
-
-          {/* AI Engine Config Button */}
-          <button
-            onClick={() => setShowAiModal(true)}
-            className={`p-2 rounded-lg border text-xs flex items-center gap-1.5 transition ${
-              (aiProvider === 'gemini' ? geminiKey : deepSeekKey)
-                ? (isDarkMode ? 'bg-sky-950/20 border-sky-800 text-sky-400' : 'bg-sky-50 border-sky-200 text-sky-600')
-                : (isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-white border-slate-300 text-slate-700')
-            }`}
-            title="Configure AI Engine (Gemini 2.0 Flash / DeepSeek)"
-          >
-            <Sparkles className="w-3.5 h-3.5" />
-            <span className="font-semibold">{(aiProvider === 'gemini' ? geminiKey : deepSeekKey) ? `${aiProvider} ready` : 'AI Engine'}</span>
-          </button>
-
-          {/* Publishing Security Config Button */}
-          <button
-            onClick={() => setShowPublishingSecurityModal(true)}
-            className={`p-2 rounded-lg border text-xs flex items-center gap-1.5 transition ${
-              publishSecret
-                ? (isDarkMode ? 'bg-emerald-950/20 border-emerald-800 text-emerald-400' : 'bg-emerald-50 border-emerald-200 text-emerald-600')
-                : (isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-white border-slate-300 text-slate-700')
-            }`}
-            title="Publishing Security & Auto-Auth"
-          >
-            <Lock className="w-3.5 h-3.5" />
-            <span className="font-semibold">{publishSecret ? 'Secure' : 'Security'}</span>
-          </button>
-
-          {/* n8n Workflow Config Button */}
-          <button
-            onClick={() => setShowN8nWorkflowModal(true)}
-            className={`p-2 rounded-lg border text-xs flex items-center gap-1.5 transition ${
-              n8nApiKey
-                ? (isDarkMode ? 'bg-violet-950/20 border-violet-800 text-violet-400' : 'bg-violet-50 border-violet-200 text-violet-600')
-                : (isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-white border-slate-300 text-slate-700')
-            }`}
-            title="n8n Workflow & MCP Settings"
-          >
-            <Zap className="w-3.5 h-3.5" />
-            <span className="font-semibold">n8n Workflow</span>
           </button>
 
           {/* Light / Dark Mode Toggle Button */}
@@ -1832,24 +1808,7 @@ export default function App() {
             title={isDarkMode ? 'Switch to Eye-Friendly Light Theme' : 'Switch to Dark Theme'}
           >
             {isDarkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-            <span className="font-semibold">{isDarkMode ? 'Dark' : 'Light'}</span>
           </button>
-
-          {/* Website & Social Links Button */}
-          <button
-            onClick={() => setShowSocialModal(true)}
-            hidden
-            className={`px-3 py-1.5 rounded-lg border text-xs font-semibold flex items-center gap-1.5 transition ${
-              isDarkMode 
-                ? 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-sky-400' 
-                : 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-sky-700'
-            }`}
-          >
-            <Globe className="w-3.5 h-3.5" />
-            Website &amp; Social Links
-          </button>
-
-
 
           {/* Lock Screen Button */}
           <button
@@ -1884,19 +1843,27 @@ export default function App() {
           {([
             ['setup', '1. Setup & branding'],
             ['airlines', `2. ${entryLabelPlural}`],
-            ['review', '3. Review & publish'],
-            ['drafts', '4. Drafts & templates'],
-            ['history', '5. History & export']
+            ['drafts', '3. Drafts & templates'],
+            ['review', '4. Review & AI Generate'],
+            ['history', '5. History & Logs']
           ] as const).map(([section, label]) => (
             <button key={section} type="button" onClick={() => { setActiveSection(section); setIsSidebarOpen(false); }} className={`block w-full rounded-lg px-3 py-2 text-left ${activeSection === section ? 'bg-sky-600 text-white' : 'hover:bg-sky-500/10 hover:text-sky-500'}`}>{label}</button>
           ))}
         </nav>
         <p className="mb-3 mt-7 px-2 text-[10px] font-black uppercase tracking-wider text-slate-500">Settings</p>
         <nav className="space-y-1 text-xs font-semibold">
-          <button onClick={() => setShowRefreshTokenModal(true)} className="block w-full rounded-lg px-3 py-2 text-left hover:bg-sky-500/10 hover:text-sky-500">Google Connection</button>
-          <button onClick={() => setShowAiModal(true)} className="block w-full rounded-lg px-3 py-2 text-left hover:bg-sky-500/10 hover:text-sky-500 text-sky-500">✨ AI Engine</button>
-          <button onClick={() => setShowPublishingSecurityModal(true)} className="block w-full rounded-lg px-3 py-2 text-left hover:bg-sky-500/10 hover:text-sky-500">🛡️ Publishing Security</button>
-          <button onClick={() => setShowN8nWorkflowModal(true)} className="block w-full rounded-lg px-3 py-2 text-left hover:bg-sky-500/10 hover:text-sky-500">⚡ n8n Workflow</button>
+          <button onClick={() => setShowRefreshTokenModal(true)} className={`block w-full rounded-lg px-3 py-2 text-left transition ${isBackendConnected ? 'text-emerald-500 hover:bg-emerald-500/10' : 'hover:bg-sky-500/10 hover:text-sky-500'}`}>
+            Google Connection {isBackendConnected && '✓'}
+          </button>
+          <button onClick={() => setShowAiModal(true)} className={`block w-full rounded-lg px-3 py-2 text-left transition ${(aiProvider === 'gemini' ? geminiKey : deepSeekKey) ? 'text-sky-500 hover:bg-sky-500/10' : 'hover:bg-sky-500/10 hover:text-sky-500'}`}>
+            ✨ AI Engine {(aiProvider === 'gemini' ? geminiKey : deepSeekKey) && '• Active'}
+          </button>
+          <button onClick={() => setShowPublishingSecurityModal(true)} className={`block w-full rounded-lg px-3 py-2 text-left transition ${publishSecret ? 'text-emerald-500 hover:bg-emerald-500/10' : 'hover:bg-sky-500/10 hover:text-sky-500'}`}>
+            🛡️ Publishing Security {publishSecret && '• Secure'}
+          </button>
+          <button onClick={() => setShowN8nWorkflowModal(true)} className={`block w-full rounded-lg px-3 py-2 text-left transition ${n8nApiKey ? 'text-violet-500 hover:bg-violet-500/10' : 'hover:bg-sky-500/10 hover:text-sky-500'}`}>
+            ⚡ n8n Workflow {n8nApiKey && '• Wired'}
+          </button>
           <button onClick={() => setShowSocialModal(true)} className="block w-full rounded-lg px-3 py-2 text-left hover:bg-sky-500/10 hover:text-sky-500">Website & Social Links</button>
           <button onClick={() => setShowPublicPage(true)} className="block w-full rounded-lg px-3 py-2 text-left hover:bg-sky-500/10 hover:text-sky-500">Public Page & Verification</button>
           <a href="https://seo-indexer-tool.vercel.app/" target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 rounded-lg px-3 py-2 hover:bg-sky-500/10 hover:text-sky-500">Blogger Indexer <ExternalLink className="ml-1 inline h-3 w-3" /></a>
@@ -1969,9 +1936,16 @@ export default function App() {
                   <input type="file" accept="image/*" className="hidden" onChange={async (e) => {
                     const file = e.target.files?.[0];
                     if (file) {
-                      const url = await uploadImageToPublicBucket(file, file.name);
-                      setCampaignBannerUrl(url);
-                      addLog('supabase', 'success', 'Banner Uploaded', `Global campaign banner uploaded: ${file.name}`);
+                      try {
+                        const url = await uploadImageToPublicBucket(file, file.name);
+                        setCampaignBannerUrl(url);
+                        addLog('supabase', 'success', 'Banner Uploaded', `Global campaign banner uploaded: ${file.name}`);
+                      } catch (err: any) {
+                        setStatusMessage(`Upload failed: ${err.message || 'Check storage config'}`);
+                        // Fallback to local preview if storage fails
+                        const localUrl = URL.createObjectURL(file);
+                        setCampaignBannerUrl(localUrl);
+                      }
                     }
                   }} />
                 </label>
@@ -2188,6 +2162,26 @@ export default function App() {
                   <Sparkles className="w-3.5 h-3.5 text-violet-600 dark:text-violet-400" />
                   <span>{isGeneratingBulk ? 'Triggering...' : '⚡ Run n8n Workflow'}</span>
                 </button>
+                {workflowRequestId && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      setStatusMessage('Checking for workflow output manually...');
+                      const blogs = await getBlogsForRequest(workflowRequestId);
+                      if (blogs.length) {
+                        setStatusMessage('Found generated blog! Loading into queue...');
+                        // (Re-use logic from handleGenerateWithWorkflow if possible or trigger a refresh)
+                        void handleGenerateWithWorkflow(); 
+                      } else {
+                        setStatusMessage('No blog found yet. Wait for n8n or check Step 5 logs.');
+                      }
+                    }}
+                    className={`p-2.5 rounded-xl border transition ${isDarkMode ? 'bg-emerald-950/20 border-emerald-800 text-emerald-400' : 'bg-emerald-50 border-emerald-200 text-emerald-700'}`}
+                    title="Manually check if n8n has finished and saved the blog to Supabase"
+                  >
+                    <RefreshCw className="w-4 h-4" />
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => setShowN8nWorkflowModal(true)}
@@ -3023,6 +3017,7 @@ export default function App() {
         onClose={() => setIsManageModalOpen(false)}
         airlines={airlines}
         onSave={(updated) => setAirlines(updated)}
+        isDarkMode={isDarkMode}
         entityLabel={entryLabel}
         activeBlogType={blogType}
         onChangeBlogType={handleBlogTypeChange}

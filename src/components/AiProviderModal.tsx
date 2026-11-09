@@ -79,19 +79,26 @@ export const AiProviderModal: React.FC<AiProviderModalProps> = ({
       }`}>
         
         {/* Header */}
-        <div className="flex items-start justify-between pb-4 border-b border-slate-800 gap-3">
+        <div className={`flex items-start justify-between pb-4 border-b gap-3 ${
+          isDarkMode ? 'border-slate-800' : 'border-slate-100'
+        }`}>
           <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+            <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
               <Sparkles className="w-5 h-5" />
             </div>
             <div>
               <h2 className="text-base font-bold">AI Engine Configuration</h2>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
+              <p className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                 Choose your AI engine for generating high-ranking SEO blog content.
               </p>
             </div>
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition">
+          <button 
+            onClick={onClose} 
+            className={`p-1 rounded-lg transition ${
+              isDarkMode ? 'text-slate-400 hover:text-white hover:bg-slate-800' : 'text-slate-400 hover:text-slate-900 hover:bg-slate-100'
+            }`}
+          >
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -99,22 +106,22 @@ export const AiProviderModal: React.FC<AiProviderModalProps> = ({
         {/* Provider Selector Tabs */}
         <div className="py-4 space-y-4">
           <div>
-            <label className="block text-xs font-bold mb-2">Preferred Model Provider</label>
+            <label className="block text-xs font-bold mb-2 uppercase tracking-wider opacity-60">Preferred Model Provider</label>
             <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
                 onClick={() => setProviderState('gemini')}
                 className={`p-3 rounded-xl border text-left transition flex flex-col gap-1 ${
                   provider === 'gemini'
-                    ? 'border-emerald-500 bg-emerald-500/10 text-emerald-400'
-                    : isDarkMode ? 'border-slate-800 bg-slate-950/60 text-slate-400' : 'border-slate-200 bg-slate-50 text-slate-600'
+                    ? 'border-emerald-500 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                    : isDarkMode ? 'border-slate-800 bg-slate-950/60 text-slate-400 hover:border-slate-700' : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-white hover:border-slate-300'
                 }`}
               >
                 <div className="flex items-center justify-between font-bold text-xs">
                   <span>Gemini 2.0 Flash</span>
                   {provider === 'gemini' && <Check className="w-3.5 h-3.5" />}
                 </div>
-                <span className="text-[10px] text-slate-500">Fast, rich structuring &amp; Google AI Studio support</span>
+                <span className={`text-[10px] ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>Fast, rich structuring & Google AI Studio</span>
               </button>
 
               <button
@@ -122,15 +129,15 @@ export const AiProviderModal: React.FC<AiProviderModalProps> = ({
                 onClick={() => setProviderState('deepseek')}
                 className={`p-3 rounded-xl border text-left transition flex flex-col gap-1 ${
                   provider === 'deepseek'
-                    ? 'border-sky-500 bg-sky-500/10 text-sky-400'
-                    : isDarkMode ? 'border-slate-800 bg-slate-950/60 text-slate-400' : 'border-slate-200 bg-slate-50 text-slate-600'
+                    ? 'border-sky-500 bg-sky-500/10 text-sky-600 dark:text-sky-400'
+                    : isDarkMode ? 'border-slate-800 bg-slate-950/60 text-slate-400 hover:border-slate-700' : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-white hover:border-slate-300'
                 }`}
               >
                 <div className="flex items-center justify-between font-bold text-xs">
                   <span>DeepSeek V3 / Chat</span>
                   {provider === 'deepseek' && <Check className="w-3.5 h-3.5" />}
                 </div>
-                <span className="text-[10px] text-slate-500">In-depth reasoning &amp; conversational depth</span>
+                <span className={`text-[10px] ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>In-depth reasoning & conversational depth</span>
               </button>
             </div>
           </div>
@@ -138,7 +145,7 @@ export const AiProviderModal: React.FC<AiProviderModalProps> = ({
           {/* Key Input based on chosen provider */}
           {provider === 'gemini' ? (
             <div>
-              <label className="block text-xs font-bold mb-1">
+              <label className="block text-xs font-bold mb-1 opacity-80">
                 Gemini API Key
               </label>
               <input
@@ -146,17 +153,17 @@ export const AiProviderModal: React.FC<AiProviderModalProps> = ({
                 value={geminiKeyInput}
                 onChange={(e) => setGeminiKeyInput(e.target.value)}
                 placeholder="AIzaSy... (leave blank to use server environment key)"
-                className={`w-full text-xs font-mono rounded-lg p-2.5 border outline-none ${
-                  isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-300 text-slate-800'
+                className={`w-full text-xs font-mono rounded-lg p-2.5 border outline-none transition ${
+                  isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-emerald-500' : 'bg-slate-50 border-slate-200 text-slate-800 focus:border-emerald-500 focus:bg-white'
                 }`}
               />
-              <span className="text-[10px] text-slate-500 mt-1 block">
-                Get free key from <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="text-emerald-400 underline">Google AI Studio</a>. Saved only in this browser session.
+              <span className="text-[10px] text-slate-500 mt-1.5 block leading-relaxed">
+                Get free key from <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="text-emerald-500 hover:underline font-bold">Google AI Studio</a>. Saved only in this browser session.
               </span>
             </div>
           ) : (
             <div>
-              <label className="block text-xs font-bold mb-1">
+              <label className="block text-xs font-bold mb-1 opacity-80">
                 DeepSeek API Key
               </label>
               <input
@@ -164,12 +171,12 @@ export const AiProviderModal: React.FC<AiProviderModalProps> = ({
                 value={deepSeekKeyInput}
                 onChange={(e) => setDeepSeekKeyInput(e.target.value)}
                 placeholder="sk-... (leave blank to use server environment key)"
-                className={`w-full text-xs font-mono rounded-lg p-2.5 border outline-none ${
-                  isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-300 text-slate-800'
+                className={`w-full text-xs font-mono rounded-lg p-2.5 border outline-none transition ${
+                  isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-sky-500' : 'bg-slate-50 border-slate-200 text-slate-800 focus:border-sky-500 focus:bg-white'
                 }`}
               />
-              <span className="text-[10px] text-slate-500 mt-1 block">
-                Get key from <a href="https://platform.deepseek.com/" target="_blank" rel="noreferrer" className="text-sky-400 underline">DeepSeek Platform</a>. Saved only in this browser session.
+              <span className="text-[10px] text-slate-500 mt-1.5 block leading-relaxed">
+                Get key from <a href="https://platform.deepseek.com/" target="_blank" rel="noreferrer" className="text-sky-500 hover:underline font-bold">DeepSeek Platform</a>. Saved only in this browser session.
               </span>
             </div>
           )}
@@ -180,45 +187,48 @@ export const AiProviderModal: React.FC<AiProviderModalProps> = ({
               type="button"
               onClick={handleTestKey}
               disabled={isTesting}
-              className={`w-full py-2 rounded-lg border text-xs font-semibold flex items-center justify-center gap-1.5 transition ${
+              className={`w-full py-2.5 rounded-lg border text-xs font-bold flex items-center justify-center gap-1.5 transition ${
                 isDarkMode ? 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-200' : 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-700'
               }`}
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isTesting ? 'animate-spin' : ''}`} />
-              <span>{isTesting ? 'Testing connection...' : 'Test AI Connection'}</span>
+              <span>{isTesting ? 'Testing Connection...' : 'Test AI Connection'}</span>
             </button>
 
             {testResult && (
-              <div className={`mt-2 p-2.5 rounded-lg border text-xs flex items-center gap-2 ${
+              <div className={`mt-2.5 p-3 rounded-lg border text-xs flex items-center gap-2.5 animate-in slide-in-from-top-1 ${
                 testResult.ok 
-                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' 
-                  : 'bg-rose-500/10 border-rose-500/30 text-rose-400'
+                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400' 
+                  : 'bg-rose-500/10 border-rose-500/30 text-rose-600 dark:text-rose-400'
               }`}>
                 {testResult.ok ? <Check className="w-4 h-4 flex-shrink-0" /> : <AlertCircle className="w-4 h-4 flex-shrink-0" />}
-                <span>{testResult.message}</span>
+                <span className="font-medium">{testResult.message}</span>
               </div>
             )}
           </div>
         </div>
 
         {/* Footer */}
-        <div className="pt-4 border-t border-slate-800 flex items-center justify-between">
+        <div className={`pt-4 border-t flex items-center justify-between ${
+          isDarkMode ? 'border-slate-800' : 'border-slate-100'
+        }`}>
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2 rounded-lg border border-slate-700 text-xs font-semibold hover:bg-slate-800 transition"
+            className={`px-4 py-2 rounded-lg border text-xs font-bold transition ${
+              isDarkMode ? 'border-slate-700 text-slate-300 hover:bg-slate-800' : 'border-slate-200 text-slate-600 hover:bg-slate-100'
+            }`}
           >
             Cancel
           </button>
           <button
             type="button"
             onClick={handleSave}
-            className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition shadow"
+            className="px-5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition shadow-lg shadow-emerald-600/20 active:scale-95"
           >
             Save AI Settings
           </button>
         </div>
-
       </div>
     </div>
   );

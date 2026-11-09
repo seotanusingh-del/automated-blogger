@@ -123,43 +123,52 @@ Return valid JSON with this exact structure:
   // The backend owns provider selection and automatically falls through to the next available text model.
   try {
     const customKey = getDeepSeekApiKey();
-    const res = await fetch('/api/ai/generate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        airlineName,
-        city,
-        country,
-        keyword,
-        tfn,
-        recentPosts,
-        variationSeed: requestVariationSeed,
-        apiKey: customKey || undefined,
-        geminiApiKey: getGeminiApiKey() || undefined,
-        blogType
-      })
-    });
+    const geminiKey = getGeminiApiKey();
+    let res: Response | null = null;
+    let lastError: Error | null = null;
 
-    if (res.ok) {
-      const data = await res.json();
-      if (
-        data.success &&
-        data.data &&
-        typeof data.data.title === 'string' &&
-        typeof data.data.overview === 'string' &&
-        Array.isArray(data.data.services) &&
-        Array.isArray(data.data.faqs)
-      ) {
-        localStorage.setItem(cachedKey, JSON.stringify(data.data));
-        return data.data as BlogPostContent;
-      }
-      throw new Error('AI service returned incomplete blog content.');
-    } else {
-      const err = await res.json().catch(() => ({}));
-      if (err.error) {
-        throw new Error(err.error);
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        res = await fetch('/api/ai/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            airlineName,
+            city,
+            country,
+            keyword,
+            tfn,
+            recentPosts,
+            variationSeed: requestVariationSeed,
+            apiKey: customKey || undefined,
+            geminiApiKey: geminiKey || undefined,
+            blogType
+          })
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          if (
+            data.success &&
+            data.data &&
+            typeof data.data.title === 'string' &&
+            typeof data.data.overview === 'string'
+          ) {
+            localStorage.setItem(cachedKey, JSON.stringify(data.data));
+            return data.data as BlogPostContent;
+          }
+          throw new Error('AI service returned incomplete blog content.');
+        } else {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error || `HTTP ${res.status}`);
+        }
+      } catch (err: any) {
+        lastError = err;
+        console.warn(`[AI Generation Attempt ${attempt} failed]:`, err.message);
+        if (attempt < 3) await new Promise(r => setTimeout(r, 1000 * attempt));
       }
     }
+    if (lastError) throw lastError;
   } catch (backendError: any) {
     console.warn('[AI Generation Backend Notice]:', backendError?.message);
     const customKey = getDeepSeekApiKey();

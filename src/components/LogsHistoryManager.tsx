@@ -133,46 +133,100 @@ export const LogsHistoryManager: React.FC<LogsHistoryManagerProps> = ({
   };
 
   return (
-    <div className={`p-4 sm:p-6 rounded-2xl border space-y-5 ${
+    <div className={`p-4 sm:p-6 rounded-2xl border space-y-5 transition-colors ${
       isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-slate-200 text-slate-900'
     }`}>
       
       {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-slate-800">
+      <div className={`flex flex-wrap items-center justify-between gap-3 pb-4 border-b ${
+        isDarkMode ? 'border-slate-800' : 'border-slate-100'
+      }`}>
         <div>
           <div className="flex items-center gap-2">
             <h2 className="text-lg font-bold">Step 5: Publishing History &amp; Real-Time Activity Logs</h2>
-            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-sky-500/10 text-sky-400 border border-sky-500/20">
+            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+              isDarkMode ? 'bg-sky-500/10 text-sky-400 border-sky-500/20' : 'bg-sky-50 text-sky-600 border-sky-200'
+            } border`}>
               {posts.length} Posts • {logs.length} Log Events
             </span>
           </div>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+          <p className={`text-xs mt-0.5 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
             Audit and track automated n8n triggers, AI generations, and live Blogger post URLs.
           </p>
         </div>
 
-        {/* Tab Switcher */}
-        <div className="flex items-center gap-1.5 p-1 bg-slate-950 rounded-xl border border-slate-800 text-xs font-bold">
+        {/* Tab Switcher & Quick Tools */}
+        <div className="flex items-center gap-2 flex-wrap">
           <button
             type="button"
-            onClick={() => setActiveTab('posts')}
-            className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition ${
-              activeTab === 'posts' ? 'bg-sky-600 text-white shadow' : 'text-slate-400 hover:text-white'
+            onClick={async () => {
+              const customKey = localStorage.getItem('easyflight_supabase_service_key') || '';
+              const webhookUrl = localStorage.getItem('easyflight_n8n_webhook') || '';
+              const mcpUrl = localStorage.getItem('easyflight_n8n_mcp') || '';
+              const n8nKey = localStorage.getItem('easyflight_n8n_apikey') || '';
+              try {
+                const res = await fetch('/api/workflow/test-connection', { 
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    supabaseKey: customKey,
+                    n8nWebhookUrl: webhookUrl,
+                    n8nMcpUrl: mcpUrl,
+                    n8nApiKey: n8nKey
+                  })
+                });
+                const data = await res.json();
+                if (data.success) {
+                  const summary = [
+                    `Supabase API: ${data.supabase?.ok ? '✅ Active' : `❌ Failed (${data.supabase?.message || 'Error'})`}`,
+                    `Supabase Storage: ${data.supabaseStorage?.ok ? '✅ Active' : `❌ Failed (${data.supabaseStorage?.message || 'Error'})`}`,
+                    `n8n Webhook: ${data.n8nWebhook?.ok ? '✅ Active' : `❌ Failed (${data.n8nWebhook?.message || 'Error'})`}`,
+                    `n8n MCP: ${data.n8nMcp?.ok ? '✅ Active' : `❌ Failed (${data.n8nMcp?.message || 'Error'})`}`
+                  ].join('\n');
+                  alert(`Connectivity Check Results:\n\n${summary}\n\nCheck "Step 5: Real-Time Logs" for more details if any checks failed.`);
+                } else {
+                  alert(`Connectivity Check Failed: ${data.error || 'Unknown server error'}`);
+                }
+              } catch (e: any) { 
+                alert(`Connectivity test failed: ${e.message || 'Check your network connection.'}`); 
+              }
+            }}
+            className={`px-3 py-1.5 rounded-lg border text-[11px] font-bold flex items-center gap-1.5 transition ${
+              isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
             }`}
           >
-            <FileText className="w-3.5 h-3.5" />
-            <span>Posts &amp; URLs ({posts.length})</span>
+            <RefreshCw className="w-3 h-3" />
+            Check Connectivity
           </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('logs')}
-            className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition ${
-              activeTab === 'logs' ? 'bg-sky-600 text-white shadow' : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            <Terminal className="w-3.5 h-3.5" />
-            <span>Real-Time Logs ({logs.length})</span>
-          </button>
+
+          <div className={`flex items-center gap-1.5 p-1 rounded-xl border text-xs font-bold transition-colors ${
+            isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'
+          }`}>
+            <button
+              type="button"
+              onClick={() => setActiveTab('posts')}
+              className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition ${
+                activeTab === 'posts' 
+                  ? 'bg-sky-600 text-white shadow-lg' 
+                  : (isDarkMode ? 'text-slate-400 hover:text-white hover:bg-slate-800' : 'text-slate-500 hover:text-slate-900 hover:bg-white shadow-sm border border-transparent hover:border-slate-200')
+              }`}
+            >
+              <FileText className="w-3.5 h-3.5" />
+              <span>Posts &amp; URLs ({posts.length})</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('logs')}
+              className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition ${
+                activeTab === 'logs' 
+                  ? 'bg-sky-600 text-white shadow-lg' 
+                  : (isDarkMode ? 'text-slate-400 hover:text-white hover:bg-slate-800' : 'text-slate-500 hover:text-slate-900 hover:bg-white shadow-sm border border-transparent hover:border-slate-200')
+              }`}
+            >
+              <Terminal className="w-3.5 h-3.5" />
+              <span>Real-Time Logs ({logs.length})</span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -183,27 +237,30 @@ export const LogsHistoryManager: React.FC<LogsHistoryManagerProps> = ({
           {/* Action & Filter Toolbar */}
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2 flex-wrap">
-              <input
-                type="text"
-                value={filterText}
-                onChange={e => setFilterText(e.target.value)}
-                placeholder="Search by title, keyword, city, or status..."
-                className={`text-xs rounded-xl px-3 py-2 border outline-none min-w-[240px] ${
-                  isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-300'
-                }`}
-              />
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-400" />
+                <input
+                  type="text"
+                  value={filterText}
+                  onChange={e => setFilterText(e.target.value)}
+                  placeholder="Search history..."
+                  className={`text-xs rounded-xl pl-8 pr-3 py-2 border outline-none min-w-[200px] transition ${
+                    isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-200 focus:bg-white'
+                  }`}
+                />
+              </div>
               <select
                 value={statusFilter}
                 onChange={e => setStatusFilter(e.target.value as any)}
-                className={`text-xs rounded-xl px-3 py-2 border outline-none ${
-                  isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-300'
+                className={`text-xs rounded-xl px-3 py-2 border outline-none transition ${
+                  isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-200 focus:bg-white'
                 }`}
               >
-                <option value="all">All Statuses ({posts.length})</option>
-                <option value="Published">Published ({posts.filter(p => p.status === 'Published').length})</option>
-                <option value="Ready">Ready ({posts.filter(p => p.status === 'Ready').length})</option>
-                <option value="Draft">Draft ({posts.filter(p => p.status === 'Draft').length})</option>
-                <option value="Error">Error ({posts.filter(p => p.status === 'Error').length})</option>
+                <option value="all">All Statuses</option>
+                <option value="Published">Published</option>
+                <option value="Ready">Ready</option>
+                <option value="Draft">Draft</option>
+                <option value="Error">Error</option>
               </select>
             </div>
 
@@ -211,16 +268,17 @@ export const LogsHistoryManager: React.FC<LogsHistoryManagerProps> = ({
               <button
                 type="button"
                 onClick={copyLiveUrls}
-                className="px-3 py-2 rounded-xl border border-slate-700 hover:bg-slate-800 text-xs font-semibold flex items-center gap-1.5 transition"
-                title="Copy all live Blogger post links"
+                className={`px-3 py-2 rounded-xl border text-xs font-bold flex items-center gap-1.5 transition ${
+                  isDarkMode ? 'border-slate-700 hover:bg-slate-800' : 'border-slate-200 hover:bg-slate-50'
+                }`}
               >
-                {copiedAllUrls ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                <span>{copiedAllUrls ? 'Copied!' : 'Copy Live URLs'}</span>
+                {copiedAllUrls ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                <span>Copy Live URLs</span>
               </button>
               <button
                 type="button"
                 onClick={exportCsv}
-                className="px-3 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold flex items-center gap-1.5 transition shadow"
+                className="px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold transition shadow-lg shadow-sky-600/20"
               >
                 <Download className="w-3.5 h-3.5" />
                 <span>Export CSV</span>
@@ -228,34 +286,38 @@ export const LogsHistoryManager: React.FC<LogsHistoryManagerProps> = ({
             </div>
           </div>
 
-          {/* Table Header & Selection Status */}
+          {/* Selection Stats */}
           {selectedIds.length > 0 && (
-            <div className="p-2.5 rounded-xl bg-sky-500/10 border border-sky-500/20 text-xs flex items-center justify-between text-sky-400">
-              <span className="font-semibold">{selectedIds.length} posts selected</span>
+            <div className={`p-3 rounded-xl border text-xs flex items-center justify-between animate-in slide-in-from-top-1 ${
+              isDarkMode ? 'bg-sky-950/20 border-sky-900/50 text-sky-400' : 'bg-sky-50 border-sky-200 text-sky-700'
+            }`}>
+              <span className="font-bold">{selectedIds.length} posts selected for batch action</span>
               <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={() => onPublishSelected(selectedIds)}
-                  className="px-3 py-1 rounded bg-sky-600 hover:bg-sky-500 text-white font-bold"
+                  className="px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-bold"
                 >
-                  Publish Selected
+                  Publish Batch
                 </button>
                 <button
                   type="button"
                   onClick={() => onDeletePosts(selectedIds)}
-                  className="px-3 py-1 rounded border border-rose-500/40 text-rose-400 hover:bg-rose-500/10 font-bold"
+                  className="px-3 py-1.5 rounded-lg border border-rose-500/40 text-rose-500 hover:bg-rose-500/10 font-bold"
                 >
-                  Delete Selected
+                  Delete
                 </button>
               </div>
             </div>
           )}
 
           {/* Posts List */}
-          <div className="space-y-2 max-h-[500px] overflow-y-auto pr-1">
+          <div className="space-y-2 max-h-[500px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-slate-200 dark:scrollbar-thumb-slate-800">
             {filteredPosts.length === 0 ? (
-              <div className="p-8 text-center text-slate-500 border border-dashed border-slate-800 rounded-xl text-xs">
-                No matching posts in history. Generate posts in Step 2 to populate this log.
+              <div className={`p-10 text-center border-2 border-dashed rounded-2xl text-xs ${
+                isDarkMode ? 'text-slate-600 border-slate-800' : 'text-slate-400 border-slate-100'
+              }`}>
+                No matching posts in history.
               </div>
             ) : (
               filteredPosts.map((post, idx) => {
@@ -264,10 +326,10 @@ export const LogsHistoryManager: React.FC<LogsHistoryManagerProps> = ({
                 return (
                   <div
                     key={post.id}
-                    className={`p-3 rounded-xl border flex flex-wrap items-center justify-between gap-3 text-xs transition ${
+                    className={`p-3.5 rounded-xl border flex flex-wrap items-center justify-between gap-3 text-xs transition-all ${
                       isSelected
-                        ? 'border-sky-500 bg-sky-500/5'
-                        : isDarkMode ? 'bg-slate-950/70 border-slate-800' : 'bg-slate-50 border-slate-200'
+                        ? (isDarkMode ? 'border-sky-500 bg-sky-500/10' : 'border-sky-500 bg-sky-50 shadow-sm')
+                        : (isDarkMode ? 'bg-slate-950/40 border-slate-800 hover:border-slate-700' : 'bg-slate-50 border-slate-100 hover:bg-white hover:border-slate-200 shadow-sm')
                     }`}
                   >
                     <div className="flex items-center gap-3 min-w-0 flex-1">
@@ -275,39 +337,43 @@ export const LogsHistoryManager: React.FC<LogsHistoryManagerProps> = ({
                         type="checkbox"
                         checked={isSelected}
                         onChange={() => toggleSelectOne(post.id)}
-                        className="rounded border-slate-700 text-sky-600 focus:ring-0"
+                        className={`rounded border-slate-300 dark:border-slate-700 text-sky-600 focus:ring-0 w-4 h-4 transition ${
+                          isDarkMode ? 'bg-slate-900' : 'bg-white'
+                        }`}
                       />
                       <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="font-bold text-slate-200 truncate">{post.title}</span>
-                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold shrink-0 ${
+                        <div className="flex items-center gap-2 mb-0.5">
+                          <span className={`font-bold truncate ${isDarkMode ? 'text-slate-100' : 'text-slate-900'}`}>{post.title}</span>
+                          <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider shrink-0 border ${
                             isPublished
-                              ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                              ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
                               : post.status === 'Ready'
-                                ? 'bg-sky-500/10 text-sky-400 border border-sky-500/20'
+                                ? 'bg-sky-500/10 text-sky-600 dark:text-sky-400 border-sky-500/20'
                                 : post.status === 'Error'
-                                  ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
-                                  : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                                  ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20'
+                                  : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20'
                           }`}>
                             {post.status}
                           </span>
                         </div>
-                        <div className="text-[11px] text-slate-500 flex items-center gap-2 mt-0.5">
-                          <span>{post.airlineName} • {post.city}</span>
-                          <span>•</span>
-                          <span className="truncate max-w-xs">{post.keyword}</span>
+                        <div className={`text-[11px] flex items-center gap-2 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+                          <span className="font-medium text-slate-400 dark:text-slate-500">{post.airlineName} • {post.city}</span>
+                          <span className="opacity-30">•</span>
+                          <span className="truncate italic">{post.keyword}</span>
                         </div>
                       </div>
                     </div>
 
                     <div className="flex items-center gap-2">
                       {post.publishedUrl ? (
-                        <>
+                        <div className="flex items-center gap-1.5">
                           <a
                             href={post.publishedUrl}
                             target="_blank"
                             rel="noreferrer"
-                            className="px-2.5 py-1 rounded-lg bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 font-bold text-[11px] hover:bg-emerald-600/30 flex items-center gap-1"
+                            className={`px-2.5 py-1.5 rounded-lg font-bold text-[10px] flex items-center gap-1.5 transition ${
+                              isDarkMode ? 'bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                            }`}
                           >
                             <span>Live Post</span>
                             <ExternalLink className="w-3 h-3" />
@@ -315,17 +381,19 @@ export const LogsHistoryManager: React.FC<LogsHistoryManagerProps> = ({
                           <button
                             type="button"
                             onClick={() => copySingleUrl(post.id, post.publishedUrl!)}
-                            className="p-1 rounded text-slate-400 hover:text-white"
+                            className={`p-1.5 rounded-lg transition ${
+                              isDarkMode ? 'text-slate-400 hover:text-white hover:bg-slate-800' : 'text-slate-400 hover:text-slate-900 hover:bg-slate-100'
+                            }`}
                             title="Copy Live URL"
                           >
-                            {copiedUrlId === post.id ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                            {copiedUrlId === post.id ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
                           </button>
-                        </>
+                        </div>
                       ) : (
                         <button
                           type="button"
                           onClick={() => onPublishSinglePost(idx)}
-                          className="px-2.5 py-1 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-bold text-[11px] flex items-center gap-1"
+                          className="px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-bold text-[10px] flex items-center gap-1.5 shadow-sm"
                         >
                           <Send className="w-3 h-3" />
                           <span>Publish</span>
@@ -335,7 +403,9 @@ export const LogsHistoryManager: React.FC<LogsHistoryManagerProps> = ({
                       <button
                         type="button"
                         onClick={() => onSelectPostToReview(idx)}
-                        className="px-2.5 py-1 rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800 text-[11px] font-semibold"
+                        className={`px-3 py-1.5 rounded-lg border text-[10px] font-bold transition ${
+                          isDarkMode ? 'border-slate-700 text-slate-300 hover:bg-slate-800' : 'border-slate-200 text-slate-600 hover:bg-slate-50 shadow-sm'
+                        }`}
                       >
                         Review
                       </button>
@@ -352,44 +422,46 @@ export const LogsHistoryManager: React.FC<LogsHistoryManagerProps> = ({
       {activeTab === 'logs' && (
         <div className="space-y-4">
           <div className="flex items-center justify-between">
-            <span className="text-xs text-slate-400">
-              Showing background execution events, n8n webhook signals, and database status logs:
+            <span className={`text-[11px] font-medium opacity-60 ${isDarkMode ? 'text-slate-400' : 'text-slate-600'}`}>
+              Background execution events, webhook signals, and database status logs:
             </span>
             <button
               type="button"
               onClick={onClearLogs}
-              className="text-xs text-rose-400 hover:underline flex items-center gap-1"
+              className="text-[11px] text-rose-500 font-bold hover:underline flex items-center gap-1"
             >
-              <Trash2 className="w-3 h-3" /> Clear Logs
+              <Trash2 className="w-3 h-3" /> Clear History
             </button>
           </div>
 
-          <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 font-mono text-xs max-h-[450px] overflow-y-auto space-y-2">
+          <div className={`p-4 rounded-2xl border font-mono text-[11px] max-h-[450px] overflow-y-auto space-y-2.5 transition-colors scrollbar-thin scrollbar-thumb-slate-300 dark:scrollbar-thumb-slate-700 ${
+            isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'
+          }`}>
             {logs.length === 0 ? (
-              <div className="text-slate-600 py-6 text-center">
-                No activity logs recorded yet. Events like workflow runs and publishing will stream here in real-time.
+              <div className="text-slate-400 py-10 text-center italic opacity-50">
+                Waiting for real-time activity...
               </div>
             ) : (
               logs.map(log => (
-                <div key={log.id} className="flex items-start gap-2.5 text-[11.5px] border-b border-slate-900 pb-1.5">
-                  <span className="text-slate-500 shrink-0">{log.timestamp}</span>
-                  <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold uppercase shrink-0 ${
+                <div key={log.id} className={`flex items-start gap-3 pb-2 border-b last:border-0 ${isDarkMode ? 'border-slate-900' : 'border-slate-100'}`}>
+                  <span className="text-slate-500 font-mono text-[10px] pt-0.5 shrink-0">{log.timestamp}</span>
+                  <span className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-tighter shrink-0 border ${
                     log.level === 'success'
-                      ? 'bg-emerald-500/20 text-emerald-400'
+                      ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
                       : log.level === 'error'
-                        ? 'bg-rose-500/20 text-rose-400'
+                        ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20'
                         : log.level === 'warning'
-                          ? 'bg-amber-500/20 text-amber-400'
-                          : 'bg-sky-500/20 text-sky-400'
+                          ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20'
+                          : 'bg-sky-500/10 text-sky-600 dark:text-sky-400 border-sky-500/20'
                   }`}>
                     {log.type}
                   </span>
                   <div className="flex-1 min-w-0">
-                    <span className="text-slate-200 font-semibold">{log.title}</span>
-                    {log.details && <p className="text-slate-400 text-[11px] mt-0.5">{log.details}</p>}
+                    <span className={`font-bold ${isDarkMode ? 'text-slate-200' : 'text-slate-800'}`}>{log.title}</span>
+                    {log.details && <p className={`mt-0.5 italic leading-relaxed ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{log.details}</p>}
                     {log.url && (
-                      <a href={log.url} target="_blank" rel="noreferrer" className="text-sky-400 underline text-[11px] block mt-0.5">
-                        {log.url}
+                      <a href={log.url} target="_blank" rel="noreferrer" className="text-sky-500 hover:underline font-bold block mt-1">
+                        View Log Resource →
                       </a>
                     )}
                   </div>

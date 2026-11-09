@@ -55,7 +55,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, isDarkMode
               onClick={onBackToPublic}
               className="mb-4 text-xs font-semibold text-sky-600 dark:text-sky-400 hover:underline flex items-center gap-1"
             >
-              ← Back to Automated-Blogger Public Site
+              ← Back to Vernika
             </button>
           )}
 
@@ -169,6 +169,14 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, isDarkMode
               <p className="mt-1 text-[11px] leading-relaxed text-slate-500">Submit published pages for search discovery and monitor their progress.</p>
               <a href="https://seo-indexer-tool.vercel.app/" target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex items-center gap-1 text-[11px] font-bold text-sky-600 dark:text-sky-400">
                 Open companion tool <ExternalLink className="h-3 w-3" />
+              </a>
+            </div>
+            <div className={`mt-5 rounded-xl border p-3 text-left ${isDarkMode ? 'border-slate-800 bg-slate-950/60' : 'border-slate-200 bg-slate-50'}`}>
+              <p className="text-[10px] font-black uppercase tracking-wider text-violet-500">Related tool</p>
+              <p className="mt-1 text-xs font-bold">BlackHat - AUTOMATOR</p>
+              <p className="mt-1 text-[11px] leading-relaxed text-slate-500">Automate high-volume PDF creation and keyword scaling.</p>
+              <a href="https://seo-automation-tanusingh.vercel.app/" target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex items-center gap-1 text-[11px] font-bold text-violet-600 dark:text-violet-400">
+                Open BlackHat tool <ExternalLink className="h-3 w-3" />
               </a>
             </div>
             <div className="flex items-center justify-center gap-3">
