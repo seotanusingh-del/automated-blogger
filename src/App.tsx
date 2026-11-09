@@ -41,7 +41,8 @@ import {
   Eye,
   Layers,
   Key,
-  Download
+  Download,
+  Zap
 } from 'lucide-react';
 import { 
   TARGET_BLOGGER_ID, 
@@ -49,6 +50,7 @@ import {
   downloadBannerImage
 } from './services/drive';
 import { DEFAULT_AIRLINES } from './data/defaultAirlines';
+import { DEFAULT_ENTITIES_BY_TYPE, getDefaultEntities } from './data/defaultEntities';
 import { AirlineItem, AirlineOffice, GeneratedPost, SocialLinks, PostSections, CustomLinkItem, BloggerSubSettings } from './types/airline';
 import { 
   generateOfficeBlogPost, 
@@ -65,6 +67,10 @@ import { RefreshTokenModal } from './components/RefreshTokenModal';
 import { PublicLandingPage } from './components/PublicLandingPage';
 import { TemplatePickerModal } from './components/TemplatePickerModal';
 import { TemplateDraftManager } from './components/TemplateDraftManager';
+import { AiProviderModal } from './components/AiProviderModal';
+import { PublishingSecurityModal } from './components/PublishingSecurityModal';
+import { N8nWorkflowModal } from './components/N8nWorkflowModal';
+import { LogsHistoryManager, ActivityLogItem } from './components/LogsHistoryManager';
 import { DEFAULT_MASTER_TEMPLATES } from './data/defaultTemplates';
 import { 
   generateDeepSeekContent, 
@@ -116,6 +122,64 @@ export default function App() {
   const [geminiKey, setGeminiKey] = useState<string>(() => getGeminiApiKey());
   const [customRefreshToken, setCustomRefreshToken] = useState<string>(() => localStorage.getItem('easyflight_google_refresh_token') || '');
   const [showRefreshTokenModal, setShowRefreshTokenModal] = useState<boolean>(false);
+  
+  // Active Navigation & Settings Modals
+  const [showAiModal, setShowAiModal] = useState<boolean>(false);
+  const [showPublishingSecurityModal, setShowPublishingSecurityModal] = useState<boolean>(false);
+  const [showN8nWorkflowModal, setShowN8nWorkflowModal] = useState<boolean>(false);
+
+  // n8n Webhook, MCP Server & Supabase Custom Settings
+  const [n8nWebhookUrl, setN8nWebhookUrl] = useState<string>(() => localStorage.getItem('easyflight_n8n_webhook') || N8N_BLOG_WEBHOOK);
+  const [n8nMcpUrl, setN8nMcpUrl] = useState<string>(() => localStorage.getItem('easyflight_n8n_mcp') || 'https://automated-blogger.app.n8n.cloud/mcp-server/http');
+  const [n8nApiKey, setN8nApiKey] = useState<string>(() => localStorage.getItem('easyflight_n8n_apikey') || '');
+  const [supabaseCustomKey, setSupabaseCustomKey] = useState<string>(() => localStorage.getItem('easyflight_supabase_service_key') || '');
+
+  // Step 1 Campaign Banner State
+  const [campaignBannerUrl, setCampaignBannerUrl] = useState<string>('');
+  const [reviewBannerUrl, setReviewBannerUrl] = useState<string>('');
+  const [applyBannerScope, setApplyBannerScope] = useState<'single' | 'all'>('single');
+
+  // Activity Logs for Step 5
+  const [activityLogs, setActivityLogs] = useState<ActivityLogItem[]>(() => {
+    try {
+      const saved = localStorage.getItem('easyflight_activity_logs');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return [
+      {
+        id: 'log-init',
+        timestamp: new Date().toLocaleTimeString(),
+        type: 'system',
+        level: 'info',
+        title: 'Studio Initialized',
+        details: 'Ready to generate, review, and publish blogs across selected entities.'
+      }
+    ];
+  });
+
+  const addLog = (
+    type: ActivityLogItem['type'],
+    level: ActivityLogItem['level'],
+    title: string,
+    details?: string,
+    url?: string
+  ) => {
+    const item: ActivityLogItem = {
+      id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      timestamp: new Date().toLocaleTimeString(),
+      type,
+      level,
+      title,
+      details,
+      url
+    };
+    setActivityLogs(prev => {
+      const updated = [item, ...prev].slice(0, 200);
+      try { localStorage.setItem('easyflight_activity_logs', JSON.stringify(updated)); } catch {}
+      return updated;
+    });
+  };
+
 
   // Target Blogger ID
   const [blogId, setBlogId] = useState<string>(() => {
@@ -905,43 +969,55 @@ export default function App() {
     const firstOffice = firstEntry?.offices?.[0];
 
     try {
-      await createPendingBlogRequest({
-        id: requestId,
-        blog_type: blogType,
-        company_name: companyName.trim() || 'Aviation Travel Desk',
-        company_email: contactEmail.trim(),
-        company_website: socialLinks.website || '',
-        keyword: targetKeyword.trim(),
-        topic: targetKeyword.trim(),
-        tfn: commonTfn,
-        tfn_number: commonTfn,
-        airline_name: firstEntry?.name || 'Airline',
-        city: firstOffice?.city || 'Headquarters',
-        status: 'pending',
-        payload: {
-          tfn_number: commonTfn,
-          seo: { searchIntent: 'informational and commercial', includeFaqs: true, includeStructuredHtml: true, includeInternalLinks: true },
-          selected_entry_count: selectedAirlines.length,
-          request: 'Create exactly one blog and save it to blogs with this request_id.'
-        }
-      } as any);
+      addLog('workflow', 'info', 'Triggering n8n Workflow', `Request ID: ${requestId} for ${blogType}`);
+      
+      const res = await fetch('/api/workflow/trigger', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          requestId,
+          blogType,
+          companyName: companyName.trim() || 'Aviation Travel Desk',
+          contactEmail: contactEmail.trim(),
+          commonTfn,
+          targetKeyword: targetKeyword.trim(),
+          n8nWebhookUrl,
+          n8nMcpUrl,
+          n8nApiKey,
+          supabaseCustomKey,
+          airlineName: firstEntry?.name || 'Airline',
+          city: firstOffice?.city || 'Headquarters'
+        })
+      });
 
-      setStatusMessage('Pending request created! Notifying n8n and waiting for generated blog in blogs table...');
-      let payload: Record<string, unknown> | null = null;
-      for (let attempt = 0; attempt < 20; attempt += 1) {
-        await new Promise(resolve => window.setTimeout(resolve, 3500));
-        const blogs = await getBlogsForRequest(requestId);
-        if (blogs.length) {
-          payload = blogs[0] as Record<string, unknown>;
-          break;
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Failed to trigger workflow');
+      }
+
+      const data = await res.json();
+      let payload = data.immediateBlog;
+
+      if (!payload) {
+        setStatusMessage('Request saved! Notifying n8n and waiting for generated blog...');
+        for (let attempt = 0; attempt < 20; attempt += 1) {
+          await new Promise(resolve => window.setTimeout(resolve, 3500));
+          const blogs = await getBlogsForRequest(requestId);
+          if (blogs.length) {
+            payload = blogs[0];
+            break;
+          }
+          setStatusMessage(`Waiting for n8n workflow execution... (${attempt + 1}/20)`);
         }
-        setStatusMessage(`Waiting for n8n workflow execution... (${attempt + 1}/20)`);
       }
 
       if (!payload) {
-        setStatusMessage('Workflow triggered! A pending request was created in table requests. Check your n8n execution or click "Check n8n Output" in Step 4 when ready.');
+        addLog('workflow', 'warning', 'Workflow Timeout', 'n8n did not return a blog within 70 seconds.');
+        setStatusMessage('Workflow triggered! A pending request was created. Check your n8n execution or click "Check n8n Output" when ready.');
         return;
       }
+      
+      addLog('workflow', 'success', 'Blog Received', `Successfully fetched blog for ${requestId}`);
 
       const title = String(payload.title || targetKeyword || 'SEO travel guide');
       const content = String(payload.content_html || payload.html_content || payload.content || payload.html || '');
@@ -1662,16 +1738,15 @@ export default function App() {
           {/* Public Landing Page & Policies Button */}
           <button
             onClick={() => setShowPublicPage(true)}
-            hidden
             className={`px-2.5 py-1.5 rounded-lg border text-xs flex items-center gap-1.5 transition ${
               isDarkMode 
                 ? 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-sky-400' 
                 : 'bg-white hover:bg-slate-100 border-slate-300 text-sky-700 shadow-sm'
             }`}
-            title="View Public Landing Page, Google Verification Info & Policies"
+            title="View Public Landing Page & Policies"
           >
             <Globe className="w-3.5 h-3.5" />
-            <span className="font-semibold">Public Site</span>
+            <span className="font-semibold">Public Page</span>
           </button>
           
           {/* Google connection status (Green = Active, Yellow = Inactive/Expired) */}
@@ -1696,20 +1771,6 @@ export default function App() {
             </span>
           </button>
 
-          {/* Google Refresh Token Button */}
-          <button
-            onClick={() => setShowRefreshTokenModal(true)}
-            hidden
-            className={`p-2 rounded-lg border text-xs flex items-center gap-1.5 transition ${
-              (isBackendConnected || customRefreshToken)
-                ? (isDarkMode ? 'bg-amber-950/20 border-amber-800 text-amber-400' : 'bg-amber-50 border-amber-200 text-amber-600')
-                : (isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-white border-slate-300 text-slate-700')
-            }`}
-            title="Configure or refresh your Google OAuth Refresh Token"
-          >
-            <Key className="w-3.5 h-3.5" />
-            <span className="font-semibold">{customRefreshToken ? 'Custom Token' : 'Google Token'}</span>
-          </button>
 
           <button type="button" onClick={() => setIsSidebarOpen(current => !current)} className="rounded-lg border p-2" aria-label="Toggle workflow navigation">
             <Settings className="h-4 w-4" />
@@ -1718,60 +1779,46 @@ export default function App() {
             <ExternalLink className="h-4 w-4" />
           </a>
 
-          {/* Publish Secret Config Button */}
+          {/* AI Engine Config Button */}
           <button
-            onClick={() => {
-              const msg = `Publishing from this dashboard is already authorized automatically!\n\nYou do NOT need to enter any PUBLISH_SECRET to publish posts.\n\n(PUBLISH_SECRET is an optional environment variable you can set in Vercel to protect your backend endpoint against external webhook abuse).\n\nCurrent Secret: ${publishSecret ? 'Configured' : 'None (Using default built-in auth)'}\n\nEnter custom secret or leave blank:`;
-              const secret = prompt(msg, publishSecret);
-              if (secret !== null) {
-                setPublishSecret(secret.trim());
-                if (secret.trim()) {
-                  localStorage.setItem('easyflight_publish_secret', secret.trim());
-                  setStatusMessage('Custom Publish Secret saved.');
-                } else {
-                  localStorage.removeItem('easyflight_publish_secret');
-                  setStatusMessage('Publish Secret cleared (Using auto-authorization).');
-                }
-                setTimeout(() => setStatusMessage(null), 3000);
-              }
-            }}
-            hidden
+            onClick={() => setShowAiModal(true)}
+            className={`p-2 rounded-lg border text-xs flex items-center gap-1.5 transition ${
+              (aiProvider === 'gemini' ? geminiKey : deepSeekKey)
+                ? (isDarkMode ? 'bg-sky-950/20 border-sky-800 text-sky-400' : 'bg-sky-50 border-sky-200 text-sky-600')
+                : (isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-white border-slate-300 text-slate-700')
+            }`}
+            title="Configure AI Engine (Gemini 2.0 Flash / DeepSeek)"
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            <span className="font-semibold">{(aiProvider === 'gemini' ? geminiKey : deepSeekKey) ? `${aiProvider} ready` : 'AI Engine'}</span>
+          </button>
+
+          {/* Publishing Security Config Button */}
+          <button
+            onClick={() => setShowPublishingSecurityModal(true)}
             className={`p-2 rounded-lg border text-xs flex items-center gap-1.5 transition ${
               publishSecret
                 ? (isDarkMode ? 'bg-emerald-950/20 border-emerald-800 text-emerald-400' : 'bg-emerald-50 border-emerald-200 text-emerald-600')
                 : (isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-white border-slate-300 text-slate-700')
             }`}
-            title="Publishing is automatically authorized. Click for webhook info."
+            title="Publishing Security & Auto-Auth"
           >
             <Lock className="w-3.5 h-3.5" />
-            <span className="font-semibold">{publishSecret ? 'Secret Set' : 'Publish: Auto-Auth'}</span>
+            <span className="font-semibold">{publishSecret ? 'Secure' : 'Security'}</span>
           </button>
 
-          {/* AI Provider Config Button */}
+          {/* n8n Workflow Config Button */}
           <button
-            id="ai-settings"
-            onClick={() => {
-              const provider = (prompt('Choose AI provider: deepseek or gemini', aiProvider) || aiProvider).toLowerCase() === 'gemini' ? 'gemini' : 'deepseek';
-              const key = prompt(provider === 'gemini' ? 'Enter Gemini API key (stored only in this browser)' : 'Enter DeepSeek API key (stored only in this browser)', provider === 'gemini' ? geminiKey : deepSeekKey);
-              if (key !== null) {
-                if (provider === 'gemini') { setGeminiApiKey(key); setGeminiKey(key); }
-                else { setDeepSeekApiKey(key); setDeepSeekKey(key); }
-                setAiProvider(provider);
-                setProvider(provider);
-                setStatusMessage(`${provider} provider selected. Keys are not stored in Supabase.`);
-                setTimeout(() => setStatusMessage(null), 3000);
-              }
-            }}
-            hidden
+            onClick={() => setShowN8nWorkflowModal(true)}
             className={`p-2 rounded-lg border text-xs flex items-center gap-1.5 transition ${
-              aiProvider === 'gemini' ? geminiKey : deepSeekKey
-                ? (isDarkMode ? 'bg-sky-950/20 border-sky-800 text-sky-400' : 'bg-sky-50 border-sky-200 text-sky-600')
+              n8nApiKey
+                ? (isDarkMode ? 'bg-violet-950/20 border-violet-800 text-violet-400' : 'bg-violet-50 border-violet-200 text-violet-600')
                 : (isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-white border-slate-300 text-slate-700')
             }`}
-            title="Configure AI provider API key"
+            title="n8n Workflow & MCP Settings"
           >
-            <Sparkles className="w-3.5 h-3.5" />
-            <span className="font-semibold">{(aiProvider === 'gemini' ? geminiKey : deepSeekKey) ? `${aiProvider} ready` : 'Set AI Key'}</span>
+            <Zap className="w-3.5 h-3.5" />
+            <span className="font-semibold">n8n Workflow</span>
           </button>
 
           {/* Light / Dark Mode Toggle Button */}
@@ -1846,20 +1893,12 @@ export default function App() {
         </nav>
         <p className="mb-3 mt-7 px-2 text-[10px] font-black uppercase tracking-wider text-slate-500">Settings</p>
         <nav className="space-y-1 text-xs font-semibold">
-          <button onClick={() => setShowRefreshTokenModal(true)} className="block w-full rounded-lg px-3 py-2 text-left hover:bg-sky-500/10 hover:text-sky-500">Google connection</button>
-          <button onClick={() => {
-            const provider = (prompt('Choose AI provider: deepseek or gemini', aiProvider) || aiProvider).toLowerCase() === 'gemini' ? 'gemini' : 'deepseek';
-            const key = prompt(provider === 'gemini' ? 'Enter Gemini API key' : 'Enter DeepSeek API key', provider === 'gemini' ? geminiKey : deepSeekKey);
-            if (key !== null) {
-              if (provider === 'gemini') { setGeminiApiKey(key); setGeminiKey(key); } else { setDeepSeekApiKey(key); setDeepSeekKey(key); }
-              setAiProvider(provider); setProvider(provider);
-            }
-          }} className="block w-full rounded-lg px-3 py-2 text-left hover:bg-sky-500/10 hover:text-sky-500">AI provider</button>
-          <button onClick={() => {
-            const secret = prompt('Optional publish secret', publishSecret);
-            if (secret !== null) { setPublishSecret(secret.trim()); secret.trim() ? localStorage.setItem('easyflight_publish_secret', secret.trim()) : localStorage.removeItem('easyflight_publish_secret'); }
-          }} className="block w-full rounded-lg px-3 py-2 text-left hover:bg-sky-500/10 hover:text-sky-500">Publishing security</button>
-          <button onClick={() => setShowSocialModal(true)} className="block w-full rounded-lg px-3 py-2 text-left hover:bg-sky-500/10 hover:text-sky-500">Website & social links</button>
+          <button onClick={() => setShowRefreshTokenModal(true)} className="block w-full rounded-lg px-3 py-2 text-left hover:bg-sky-500/10 hover:text-sky-500">Google Connection</button>
+          <button onClick={() => setShowAiModal(true)} className="block w-full rounded-lg px-3 py-2 text-left hover:bg-sky-500/10 hover:text-sky-500 text-sky-500">✨ AI Engine</button>
+          <button onClick={() => setShowPublishingSecurityModal(true)} className="block w-full rounded-lg px-3 py-2 text-left hover:bg-sky-500/10 hover:text-sky-500">🛡️ Publishing Security</button>
+          <button onClick={() => setShowN8nWorkflowModal(true)} className="block w-full rounded-lg px-3 py-2 text-left hover:bg-sky-500/10 hover:text-sky-500">⚡ n8n Workflow</button>
+          <button onClick={() => setShowSocialModal(true)} className="block w-full rounded-lg px-3 py-2 text-left hover:bg-sky-500/10 hover:text-sky-500">Website & Social Links</button>
+          <button onClick={() => setShowPublicPage(true)} className="block w-full rounded-lg px-3 py-2 text-left hover:bg-sky-500/10 hover:text-sky-500">Public Page & Verification</button>
           <a href="https://seo-indexer-tool.vercel.app/" target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 rounded-lg px-3 py-2 hover:bg-sky-500/10 hover:text-sky-500">Blogger Indexer <ExternalLink className="ml-1 inline h-3 w-3" /></a>
         </nav>
       </aside>
@@ -1911,6 +1950,37 @@ export default function App() {
                 {companyLogoUrl && <button type="button" onClick={() => setCompanyLogoUrl('')} className="text-[11px] font-semibold text-rose-500">Remove</button>}
               </div>
               <button type="button" onClick={applyBrandingToPosts} className="mt-3 rounded-lg bg-sky-600 px-3 py-2 text-[11px] font-bold text-white hover:bg-sky-500">Apply branding to blog queue</button>
+            </div>
+
+            <div className={`${activeSection === 'setup' ? '' : 'hidden'} rounded-xl border border-sky-500/20 bg-sky-500/5 p-3`}>
+              <p className="text-xs font-black">Campaign Banner (Global)</p>
+              <p className="mt-1 text-[11px] text-slate-500">Set a global banner for all generated posts or upload a custom one.</p>
+              <div className="mt-3 flex items-center gap-3">
+                <input
+                  type="text"
+                  value={campaignBannerUrl}
+                  onChange={(e) => setCampaignBannerUrl(e.target.value)}
+                  placeholder="Banner Image URL (PNG/JPG/WebP)"
+                  className={`flex-1 rounded-lg border p-2.5 text-xs outline-none ${isDarkMode ? 'border-slate-800 bg-slate-950 text-white' : 'border-slate-300 bg-white text-slate-900'}`}
+                />
+                <label className="shrink-0 cursor-pointer rounded-lg bg-slate-800 px-3 py-2 text-[11px] font-bold text-white hover:bg-slate-700">
+                  <Upload className="w-3.5 h-3.5 inline mr-1" />
+                  Upload
+                  <input type="file" accept="image/*" className="hidden" onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      const url = await uploadImageToPublicBucket(file, file.name);
+                      setCampaignBannerUrl(url);
+                      addLog('supabase', 'success', 'Banner Uploaded', `Global campaign banner uploaded: ${file.name}`);
+                    }
+                  }} />
+                </label>
+              </div>
+              {campaignBannerUrl && (
+                <div className="mt-3 rounded-lg overflow-hidden border border-slate-700 aspect-[21/9]">
+                  <img src={campaignBannerUrl} className="w-full h-full object-cover" alt="Campaign Banner Preview" />
+                </div>
+              )}
             </div>
 
             <div className={activeSection === 'setup' ? '' : 'hidden'}>
@@ -2118,6 +2188,14 @@ export default function App() {
                   <Sparkles className="w-3.5 h-3.5 text-violet-600 dark:text-violet-400" />
                   <span>{isGeneratingBulk ? 'Triggering...' : '⚡ Run n8n Workflow'}</span>
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setShowN8nWorkflowModal(true)}
+                  className={`p-2.5 rounded-xl border transition ${isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-slate-100 border-slate-300 text-slate-700'}`}
+                  title="n8n Connection Settings"
+                >
+                  <Settings className="w-4 h-4" />
+                </button>
               </div>
 
               <div
@@ -2224,32 +2302,32 @@ export default function App() {
           />
         </section>
 
-        <section className={`${activeSection === 'history' ? '' : 'hidden'} w-full max-w-6xl mx-auto rounded-2xl border p-3 sm:p-5 shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div><h2 className="text-lg font-black">Logs, status & history</h2><p className="text-xs text-slate-500">Filter, select, copy links, or export your workflow records.</p></div>
-            <div className="flex gap-2">
-              <button type="button" onClick={() => setSelectedHistoryIds(filteredHistoryPosts.map(post => post.id))} className="rounded-lg border px-3 py-2 text-[11px] font-semibold">Select all</button>
-              <button type="button" onClick={copyHistoryLinks} className="rounded-lg border px-3 py-2 text-[11px] font-semibold">Copy published URLs</button>
-              <button type="button" onClick={exportHistory} className="rounded-lg bg-sky-600 px-3 py-2 text-[11px] font-bold text-white">Export CSV</button>
-            </div>
-          </div>
-          <input value={historyFilter} onChange={(event) => setHistoryFilter(event.target.value)} placeholder="Filter by day, keyword, airline, status, or title" className={`mt-4 w-full rounded-lg border p-2.5 text-xs outline-none ${isDarkMode ? 'border-slate-800 bg-slate-950 text-white' : 'border-slate-300 bg-slate-50 text-slate-900'}`} />
-          <select value={historyStatusFilter} onChange={event => setHistoryStatusFilter(event.target.value as typeof historyStatusFilter)} className={`mt-2 rounded-lg border p-2 text-xs ${isDarkMode ? 'border-slate-800 bg-slate-950 text-white' : 'border-slate-300 bg-white'}`}>
-            <option value="all">All statuses</option><option value="Published">Published</option><option value="Ready">Ready</option><option value="Draft">Draft</option><option value="Error">Error</option>
-          </select>
-          <div className="mt-4 space-y-2">
-            {filteredHistoryPosts.map(post => <label key={post.id} className={`flex items-center gap-3 rounded-lg border p-3 text-xs ${isDarkMode ? 'border-slate-800 bg-slate-950/50' : 'border-slate-200 bg-slate-50'}`}>
-              <input type="checkbox" checked={selectedHistoryIds.includes(post.id)} onChange={(event) => setSelectedHistoryIds(current => event.target.checked ? [...current, post.id] : current.filter(id => id !== post.id))} />
-              <span className="min-w-0 flex-1 truncate font-semibold">{post.title}</span>
-              <span className="hidden text-slate-500 sm:inline">{post.keyword}</span>
-              <span className="rounded-full bg-sky-500/10 px-2 py-1 text-[10px] font-bold text-sky-600">{post.status}</span>
-              {post.publishedUrl && <>
-                <a href={post.publishedUrl} target="_blank" rel="noreferrer" className="text-sky-600 hover:underline">Open</a>
-                <button type="button" onClick={() => { void navigator.clipboard.writeText(post.publishedUrl || ''); setStatusMessage('Live URL copied.'); }} className="text-sky-600 hover:underline">Copy live URL</button>
-              </>}
-            </label>)}
-            {!filteredHistoryPosts.length && <p className="rounded-lg bg-slate-500/10 p-4 text-xs text-slate-500">No matching history items.</p>}
-          </div>
+        <section className={`${activeSection === 'history' ? '' : 'hidden'} w-full max-w-6xl mx-auto`}>
+          <LogsHistoryManager
+            posts={generatedPosts}
+            logs={activityLogs}
+            isDarkMode={isDarkMode}
+            onPublishSinglePost={handlePublishSinglePost}
+            onPublishSelected={(ids) => {
+              const selected = generatedPosts.filter(p => ids.includes(p.id));
+              // Bulk publish logic
+              setStatusMessage(`Starting bulk publish for ${selected.length} posts...`);
+              handlePublishAllVerified();
+            }}
+            onDeletePosts={(ids) => {
+              const updated = generatedPosts.filter(p => !ids.includes(p.id));
+              setGeneratedPosts(updated);
+              addLog('system', 'warning', 'Posts Deleted', `Removed ${ids.length} posts from history.`);
+            }}
+            onClearLogs={() => {
+              setActivityLogs([]);
+              localStorage.removeItem('easyflight_activity_logs');
+            }}
+            onSelectPostToReview={(idx) => {
+              setCurrentPostIndex(idx);
+              setActiveSection('review');
+            }}
+          />
         </section>
 
         {/* RIGHT COLUMN: Live Review Studio & Non-Technical Easy Editor */}
@@ -2416,31 +2494,47 @@ export default function App() {
                         </span>
                       )}
                     </div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => handleGenerateAIPost(currentPostIndex)}
-                        className="bg-emerald-600 hover:bg-emerald-500 text-white px-2.5 py-1 rounded flex items-center gap-1 font-bold text-[11px] shadow-sm transition"
-                        title={`Rewrite this blog post with 100% unique ${aiProvider} content`}
-                      >
-                        <Sparkles className="w-3.5 h-3.5" /> Generate with {aiProvider}
-                      </button>
-                      <button
-                        onClick={handleRegenerateBanner}
-                        className="text-sky-600 dark:text-sky-400 hover:underline flex items-center gap-1 font-semibold text-[11px]"
-                      >
-                        <RefreshCw className="w-3 h-3" /> Redraw SVG
-                      </button>
-                      <button
-                        onClick={() => activePost && downloadBannerImage(activePost.imageUrl, activePost.title)}
-                        className="text-amber-600 dark:text-amber-400 hover:underline flex items-center gap-1 font-semibold text-[11px]"
-                        title="Download current banner as high-res PNG"
-                      >
-                        <Download className="w-3 h-3" /> Download
-                      </button>
-                      <label className="cursor-pointer text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 flex items-center gap-1 font-semibold text-[11px]">
-                        <Upload className="w-3 h-3" /> Upload
-                        <input type="file" accept="image/*" onChange={handleCustomImageUpload} className="hidden" />
-                      </label>
+                    <div className="w-full flex items-center gap-3 pt-2 border-t border-slate-800">
+                      <div className="flex-1">
+                        <input
+                          type="text"
+                          value={activePost.imageUrl || ''}
+                          onChange={(e) => {
+                            const updated = { ...activePost, imageUrl: e.target.value };
+                            const newPosts = [...generatedPosts];
+                            newPosts[currentPostIndex] = updated;
+                            setGeneratedPosts(newPosts);
+                          }}
+                          placeholder="Image URL (SVG data: or https://...)"
+                          className={`w-full p-1.5 border rounded text-[10px] outline-none ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-300' : 'bg-white border-slate-300 text-slate-700'}`}
+                        />
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handleGenerateAIPost(currentPostIndex)}
+                          className="bg-emerald-600 hover:bg-emerald-500 text-white px-2.5 py-1 rounded flex items-center gap-1 font-bold text-[11px] shadow-sm transition"
+                          title={`Rewrite this blog post with 100% unique ${aiProvider} content`}
+                        >
+                          <Sparkles className="w-3.5 h-3.5" /> Generate
+                        </button>
+                        <button
+                          onClick={handleRegenerateBanner}
+                          className="text-sky-600 dark:text-sky-400 hover:underline flex items-center gap-1 font-semibold text-[11px]"
+                        >
+                          <RefreshCw className="w-3 h-3" /> Redraw
+                        </button>
+                        <button
+                          onClick={() => activePost && downloadBannerImage(activePost.imageUrl, activePost.title)}
+                          className="text-amber-600 dark:text-amber-400 hover:underline flex items-center gap-1 font-semibold text-[11px]"
+                          title="Download banner"
+                        >
+                          <Download className="w-3 h-3" /> Save
+                        </button>
+                        <label className="cursor-pointer text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 flex items-center gap-1 font-semibold text-[11px]">
+                          <Upload className="w-3 h-3" />
+                          <input type="file" accept="image/*" onChange={handleCustomImageUpload} className="hidden" />
+                        </label>
+                      </div>
                     </div>
                   </div>
                 )}
@@ -2930,6 +3024,8 @@ export default function App() {
         airlines={airlines}
         onSave={(updated) => setAirlines(updated)}
         entityLabel={entryLabel}
+        activeBlogType={blogType}
+        onChangeBlogType={handleBlogTypeChange}
       />
 
       {/* Google Refresh Token Modal */}
@@ -2957,6 +3053,70 @@ export default function App() {
         }}
         onFullLogout={handleFullLogout}
         isDarkMode={isDarkMode}
+      />
+
+      {/* AI Provider Modal */}
+      <AiProviderModal
+        isOpen={showAiModal}
+        onClose={() => setShowAiModal(false)}
+        isDarkMode={isDarkMode}
+        onSaved={(msg) => {
+          setStatusMessage(msg);
+          setDeepSeekKey(getDeepSeekApiKey());
+          setGeminiKey(getGeminiApiKey());
+          setProvider(getAiProvider());
+          addLog('system', 'success', 'AI Config Updated', msg);
+          setTimeout(() => setStatusMessage(null), 3000);
+        }}
+      />
+
+      {/* Publishing Security Modal */}
+      <PublishingSecurityModal
+        isOpen={showPublishingSecurityModal}
+        onClose={() => setShowPublishingSecurityModal(false)}
+        isDarkMode={isDarkMode}
+        publishSecret={publishSecret}
+        onSave={(secret) => {
+          setPublishSecret(secret);
+          if (secret) {
+            localStorage.setItem('easyflight_publish_secret', secret);
+            addLog('system', 'success', 'Security Configured', 'Custom publish secret has been set.');
+          } else {
+            localStorage.removeItem('easyflight_publish_secret');
+            addLog('system', 'info', 'Security Reset', 'Using default built-in dashboard auth.');
+          }
+          setStatusMessage(secret ? 'Publish Secret saved!' : 'Auto-authorization enabled.');
+          setTimeout(() => setStatusMessage(null), 3000);
+        }}
+      />
+
+      {/* n8n Workflow Modal */}
+      <N8nWorkflowModal
+        isOpen={showN8nWorkflowModal}
+        onClose={() => setShowN8nWorkflowModal(false)}
+        isDarkMode={isDarkMode}
+        n8nWebhookUrl={n8nWebhookUrl}
+        onChangeN8nWebhookUrl={(url) => {
+          setN8nWebhookUrl(url);
+          localStorage.setItem('easyflight_n8n_webhook', url);
+        }}
+        n8nMcpUrl={n8nMcpUrl}
+        onChangeN8nMcpUrl={(url) => {
+          setN8nMcpUrl(url);
+          localStorage.setItem('easyflight_n8n_mcp', url);
+        }}
+        n8nApiKey={n8nApiKey}
+        onChangeN8nApiKey={(key) => {
+          setN8nApiKey(key);
+          localStorage.setItem('easyflight_n8n_apikey', key);
+          addLog('system', 'success', 'n8n API Key Updated', 'New n8n API key saved.');
+        }}
+        supabaseCustomKey={supabaseCustomKey}
+        onChangeSupabaseCustomKey={(key) => {
+          setSupabaseCustomKey(key);
+          localStorage.setItem('easyflight_supabase_service_key', key);
+          addLog('supabase', 'success', 'Service Key Updated', 'Custom Supabase service key saved.');
+        }}
       />
 
       {/* Footer with Developer Credits and Social Icons */}

@@ -124,18 +124,38 @@ export async function getBlogTableDrafts(limit = 100): Promise<StoredBlogDraft[]
   return (data || []) as StoredBlogDraft[];
 }
 
-export async function createPendingBlogRequest(request: BlogRequestInput): Promise<BlogRequestInput> {
-  // 1. Try server-side proxy route first (works without client keys)
+export async function createPendingBlogRequest(request: BlogRequestInput & { immediateBlog?: any }): Promise<BlogRequestInput & { immediateBlog?: any }> {
+  const customKey = typeof window !== 'undefined' ? localStorage.getItem('easyflight_custom_supabase_key') || '' : '';
+  const n8nWebhookUrl = typeof window !== 'undefined' ? localStorage.getItem('easyflight_n8n_webhook') || '' : '';
+  const n8nMcpUrl = typeof window !== 'undefined' ? localStorage.getItem('easyflight_n8n_mcp') || '' : '';
+  const n8nApiKey = typeof window !== 'undefined' ? localStorage.getItem('easyflight_n8n_api_key') || '' : '';
+
+  // 1. Try server-side proxy route first (clears previous rows & inserts single pending row)
   try {
     const res = await fetch('/api/workflow/trigger', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(request)
+      headers: { 
+        'Content-Type': 'application/json',
+        ...(customKey ? { 'x-supabase-key': customKey } : {}),
+        ...(n8nWebhookUrl ? { 'x-n8n-webhook': n8nWebhookUrl } : {}),
+        ...(n8nMcpUrl ? { 'x-n8n-mcp': n8nMcpUrl } : {}),
+        ...(n8nApiKey ? { 'x-n8n-api-key': n8nApiKey } : {})
+      },
+      body: JSON.stringify({
+        ...request,
+        supabaseKey: customKey || undefined,
+        n8nWebhookUrl: n8nWebhookUrl || undefined,
+        n8nMcpUrl: n8nMcpUrl || undefined,
+        n8nApiKey: n8nApiKey || undefined
+      })
     });
     if (res.ok) {
       const json = await res.json();
       if (json.success) {
-        return (json.record || request) as BlogRequestInput;
+        return {
+          ...((json.record || request) as BlogRequestInput),
+          immediateBlog: json.immediateBlog
+        };
       }
     }
   } catch (apiErr) {
@@ -145,7 +165,10 @@ export async function createPendingBlogRequest(request: BlogRequestInput): Promi
   // 2. Direct client-side Supabase fallback if available
   if (supabase) {
     try {
-      await supabase.from('requests').delete().neq('id', '');
+      await supabase.from('requests').delete().not('id', 'is', null);
+    } catch (_) {}
+    try {
+      await supabase.from('user_blog_requests').delete().not('id', 'is', null);
     } catch (_) {}
     try {
       const { data, error } = await supabase.from('requests').insert(request).select().single();
@@ -157,9 +180,13 @@ export async function createPendingBlogRequest(request: BlogRequestInput): Promi
 }
 
 export async function getBlogsForRequest(requestId: string): Promise<StoredBlogDraft[]> {
+  const customKey = typeof window !== 'undefined' ? localStorage.getItem('easyflight_custom_supabase_key') || '' : '';
+
   // 1. Try server-side status endpoint first
   try {
-    const res = await fetch(`/api/workflow/status?requestId=${encodeURIComponent(requestId)}`);
+    const res = await fetch(`/api/workflow/status?requestId=${encodeURIComponent(requestId)}`, {
+      headers: customKey ? { 'x-supabase-key': customKey } : undefined
+    });
     if (res.ok) {
       const json = await res.json();
       if (Array.isArray(json.blogs) && json.blogs.length > 0) {
@@ -178,7 +205,15 @@ export async function getBlogsForRequest(requestId: string): Promise<StoredBlogD
       .eq('request_id', requestId)
       .order('created_at', { ascending: false })
       .limit(10);
-    if (!error && data) return data as StoredBlogDraft[];
+    if (!error && data && data.length > 0) return data as StoredBlogDraft[];
+
+    // If empty for specific requestId, grab latest generated blog
+    const { data: recentData } = await supabase
+      .from('blogs')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(5);
+    if (recentData && recentData.length > 0) return recentData as StoredBlogDraft[];
   }
 
   return [];

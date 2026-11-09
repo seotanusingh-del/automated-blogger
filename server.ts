@@ -14,7 +14,26 @@ const PORT = Number(process.env.PORT) || 3000;
 
 app.use(express.json({ limit: '10mb' }));
 
-const storageUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || 'https://gplxknbnohajegmxkvot.supabase.co';
+function getValidSupabaseUrl(): string {
+  const envUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
+  if (envUrl && !envUrl.includes('your-project') && envUrl.startsWith('http')) {
+    return envUrl.replace(/\/+$/, '');
+  }
+  return 'https://gplxknbnohajegmxkvot.supabase.co';
+}
+
+function getValidServiceKey(customKey?: string): string {
+  if (customKey && customKey.trim() && !customKey.includes('your-service') && !customKey.includes('your-anon')) {
+    return customKey.trim();
+  }
+  const envKey = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
+  if (envKey && !envKey.includes('your-service') && !envKey.includes('your-anon')) {
+    return envKey;
+  }
+  return '';
+}
+
+const storageUrl = getValidSupabaseUrl();
 const storageBucket = 'DATA';
 const publicStorageUrl = `${storageUrl}/storage/v1/object/public/${storageBucket}`;
 const pollinationsApiKey = process.env.POLLINATIONS_API_KEY || process.env.POLLINATIONS_SECRET_KEY || process.env.VITE_POLLINATIONS_API_KEY || '';
@@ -26,18 +45,29 @@ function normalizeAiContent(value: any) {
   return value;
 }
 
-function fallbackAiContent(airlineName: string, city: string, keyword: string, tfn: string) {
-  const topic = keyword.trim() || `${airlineName} flight support`;
+function fallbackAiContent(airlineName: string, city: string, keyword: string, tfn: string, blogType = 'airlines') {
+  const topic = keyword.trim() || `${airlineName} support guide`;
+  const cleanTfn = tfn || '+1 (888) 794-3464';
+  const entityDesc = blogType === 'hotels' ? 'hotel and resort services' :
+                    blogType === 'travel' ? 'travel guide and destination info' :
+                    blogType === 'agency' ? 'travel concierge and booking assistance' : 'passenger guide and airline customer assistance';
   return {
-    title: `${airlineName} ${city} ${topic}: Complete Passenger Guide`,
-    overview: `Looking for ${topic}? This practical guide explains the key steps for ${airlineName} passengers in ${city}, including what to check first, which booking details to keep ready, and what to confirm before accepting a new itinerary.\n\nRules for changes, refunds, missed departures, and onward reservations can depend on the fare and the circumstances. Contact the airline promptly and ask the reservations team to confirm the current conditions for your booking.\n\nFor assistance with ${topic}, keep your confirmation number ready and contact ${tfn || '+1-888-794-3464'}.`,
-    services: ['Reservation status checks', 'Flight rebooking guidance', 'Change-fee explanations', 'Refund and credit guidance', 'Baggage and check-in assistance', 'Return-flight status checks'],
+    title: `${airlineName} ${city} ${topic}: Complete ${blogType === 'hotels' ? 'Guest' : 'Traveler'} Guide`,
+    overview: `Looking for ${topic}? This comprehensive guide explains the key steps for ${airlineName} in ${city}, including contact details, booking confirmation steps, dispute resolution, and what to verify before making itinerary changes.\n\nPolicies for reservations, schedule changes, refunds, and support depend on booking terms and room or fare conditions. Contact the customer desk promptly to confirm active policies for your booking.\n\nFor 24/7 dedicated assistance with ${topic}, keep your confirmation reference ready and call ${cleanTfn}.`,
+    services: [
+      `Dedicated assistance for ${topic}`,
+      'Reservation verification and rebooking guidance',
+      'Change policies, terms, and fee explanations',
+      'Refund, credit, and cancellation advice',
+      'Baggage, check-in, and accommodation assistance',
+      'Escalation and direct specialist support'
+    ],
     faqs: [
-      { question: `What should I do about ${topic}?`, answer: `Contact the airline promptly with your booking reference and ask what options apply. Assistance is available at ${tfn || '+1-888-794-3464'}.` },
-      { question: 'Can my flight be rebooked?', answer: 'Rebooking depends on available flights and the conditions attached to the reservation. Confirm all charges before accepting.' },
-      { question: 'Could another segment be affected?', answer: 'Some no-show conditions may affect remaining segments, so ask the reservations team to check the full itinerary.' },
-      { question: 'Can I request a refund?', answer: 'Refund eligibility depends on the fare conditions and the reason for the disruption.' },
-      { question: `Where can I get ${topic} help?`, answer: `Keep your confirmation details ready and contact the reservations team at ${tfn || '+1-888-794-3464'}.` }
+      { question: `What should I do first for ${topic}?`, answer: `Contact the dedicated support desk with your confirmation reference and ask what options apply. Immediate assistance is available at ${cleanTfn}.` },
+      { question: 'Can my reservation or itinerary be rebooked?', answer: 'Rebooking depends on availability and the specific conditions attached to the reservation. Always confirm terms before accepting changes.' },
+      { question: 'Could onward segments or connected bookings be affected?', answer: 'Some changes affect remaining travel or return legs. Ask the desk to check your entire booking record.' },
+      { question: 'What is the policy for cancellation or refund?', answer: 'Eligibility depends on the published policy and the circumstances of the disruption.' },
+      { question: `Where can I get immediate ${topic} help?`, answer: `Have your booking details ready and contact the team at ${cleanTfn}.` }
     ]
   };
 }
@@ -66,9 +96,9 @@ app.get(['/api/images/pollinations', '/images/pollinations'], async (req, res) =
 
 app.get(['/api/storage/images', '/storage/images'], async (req, res) => {
   const prefix = String(req.query.prefix || '');
-  const serviceKey = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+  const serviceKey = getValidServiceKey(req.headers['x-supabase-key'] as string);
   if (!serviceKey) {
-    return res.status(503).json({ error: 'Set SUPABASE_SERVICE_KEY or SUPABASE_ANON_KEY to load the public DATA image library.' });
+    return res.status(503).json({ error: 'Supabase credentials are not configured.' });
   }
   try {
     const response = await fetch(`${storageUrl}/storage/v1/object/list/${storageBucket}`, {
@@ -111,7 +141,7 @@ app.get(['/api/storage/images', '/storage/images'], async (req, res) => {
 });
 
 app.post(['/api/storage/upload', '/storage/upload'], async (req, res) => {
-  const serviceKey = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+  const serviceKey = getValidServiceKey(req.headers['x-supabase-key'] as string);
   const { filename, contentType, data } = req.body || {};
   if (!serviceKey) return res.status(503).json({ error: 'Supabase service storage is not configured.' });
   if (!filename || !data) return res.status(400).json({ error: 'Missing image filename or data.' });
@@ -136,11 +166,83 @@ app.post(['/api/storage/upload', '/storage/upload'], async (req, res) => {
   }
 });
 
+// n8n & Supabase Connectivity Test endpoint
+app.post(['/api/workflow/test-connection', '/workflow/test-connection'], async (req, res) => {
+  const { n8nWebhookUrl, n8nMcpUrl, n8nApiKey, supabaseKey } = req.body || {};
+  const activeKey = getValidServiceKey(supabaseKey || (req.headers['x-supabase-key'] as string));
+  const webhook = String(n8nWebhookUrl || process.env.N8N_WEBHOOK_URL || 'https://automated-blogger.app.n8n.cloud/webhook/seo-blog-generator').trim();
+  const mcp = String(n8nMcpUrl || process.env.N8N_MCP_URL || 'https://automated-blogger.app.n8n.cloud/mcp-server/http').trim();
+
+  const results: any = {
+    supabase: { ok: false, message: 'Not tested' },
+    n8nWebhook: { ok: false, status: 0, message: '' },
+    n8nMcp: { ok: false, status: 0, message: '' }
+  };
+
+  // 1. Test Supabase requests table
+  try {
+    const sbRes = await fetch(`${storageUrl}/rest/v1/requests?limit=1`, {
+      headers: {
+        Authorization: `Bearer ${activeKey || 'placeholder'}`,
+        apikey: activeKey || 'placeholder'
+      }
+    });
+    results.supabase = {
+      ok: sbRes.ok || sbRes.status === 200 || sbRes.status === 206,
+      status: sbRes.status,
+      message: sbRes.ok ? 'requests table accessible' : `Supabase returned ${sbRes.status}`
+    };
+  } catch (sbErr: any) {
+    results.supabase = { ok: false, message: sbErr?.message || 'Supabase unreachable' };
+  }
+
+  // 2. Test n8n Webhook
+  try {
+    const wbHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (n8nApiKey) wbHeaders['X-N8N-API-KEY'] = n8nApiKey;
+    const wbRes = await fetch(webhook, {
+      method: 'POST',
+      headers: wbHeaders,
+      body: JSON.stringify({ event: 'ping', test: true, timestamp: Date.now() })
+    });
+    results.n8nWebhook = {
+      ok: wbRes.ok || wbRes.status < 500,
+      status: wbRes.status,
+      message: wbRes.ok ? 'Webhook received ping successfully' : `HTTP ${wbRes.status}`
+    };
+  } catch (wbErr: any) {
+    results.n8nWebhook = { ok: false, message: wbErr?.message || 'Webhook ping failed' };
+  }
+
+  // 3. Test n8n MCP Server
+  try {
+    const mcpHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (n8nApiKey) mcpHeaders['X-N8N-API-KEY'] = n8nApiKey;
+    const mcpRes = await fetch(mcp, {
+      method: 'POST',
+      headers: mcpHeaders,
+      body: JSON.stringify({ jsonrpc: '2.0', method: 'initialize', id: 1, params: { clientInfo: { name: 'Automated-Blogger' } } })
+    });
+    results.n8nMcp = {
+      ok: mcpRes.ok || mcpRes.status < 500,
+      status: mcpRes.status,
+      message: mcpRes.ok ? 'MCP JSON-RPC server ready' : `HTTP ${mcpRes.status}`
+    };
+  } catch (mcpErr: any) {
+    results.n8nMcp = { ok: false, message: mcpErr?.message || 'MCP ping failed' };
+  }
+
+  res.json({ success: true, ...results });
+});
+
 // n8n Workflow Integration: Creates one pending row in Supabase requests table & notifies n8n
 app.post(['/api/workflow/trigger', '/workflow/trigger'], async (req, res) => {
-  const serviceKey = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
-  if (!serviceKey) return res.status(503).json({ error: 'Supabase credentials are not configured.' });
-  
+  const customKey = req.body?.supabaseKey || (req.headers['x-supabase-key'] as string);
+  const serviceKey = getValidServiceKey(customKey);
+  const customWebhook = req.body?.n8nWebhookUrl || (req.headers['x-n8n-webhook'] as string);
+  const customMcp = req.body?.n8nMcpUrl || (req.headers['x-n8n-mcp'] as string);
+  const customApiKey = req.body?.n8nApiKey || (req.headers['x-n8n-api-key'] as string);
+
   const { id, blog_type, company_name, company_email, company_website, keyword, topic, tfn, tfn_number, airline_name, city, country, payload } = req.body || {};
   const requestId = id || `req-${Date.now()}`;
   const record = {
@@ -161,90 +263,160 @@ app.post(['/api/workflow/trigger', '/workflow/trigger'], async (req, res) => {
   };
 
   try {
-    // 1. Clear previous rows to avoid n8n confusion
-    await fetch(`${storageUrl}/rest/v1/requests?id=neq.placeholder`, {
-      method: 'DELETE',
-      headers: {
+    // 1. Clear previous rows from requests, request, user_blog_requests, and "User blog request"
+    if (serviceKey) {
+      const deleteHeaders = {
         Authorization: `Bearer ${serviceKey}`,
         apikey: serviceKey,
         'Content-Type': 'application/json'
-      }
-    }).catch(() => {});
+      };
 
-    await fetch(`${storageUrl}/rest/v1/user_blog_requests?id=neq.placeholder`, {
-      method: 'DELETE',
-      headers: {
-        Authorization: `Bearer ${serviceKey}`,
-        apikey: serviceKey,
-        'Content-Type': 'application/json'
-      }
-    }).catch(() => {});
+      const tableNames = ['requests', 'request', 'user_blog_requests', encodeURIComponent('User blog request')];
+      await Promise.all(tableNames.map(tbl => 
+        fetch(`${storageUrl}/rest/v1/${tbl}?id=not.is.null`, {
+          method: 'DELETE',
+          headers: deleteHeaders
+        }).catch(() => {})
+      ));
 
-    // 2. Insert single pending row into requests
-    const insertRes = await fetch(`${storageUrl}/rest/v1/requests`, {
-      method: 'POST',
-      headers: {
+      // 2. Insert single pending row into requests and alias tables
+      const insertHeaders = {
         Authorization: `Bearer ${serviceKey}`,
         apikey: serviceKey,
         'Content-Type': 'application/json',
         Prefer: 'return=representation'
-      },
-      body: JSON.stringify(record)
-    });
+      };
 
-    const insertData = await insertRes.json().catch(() => ({}));
-    if (!insertRes.ok) {
-      return res.status(insertRes.status).json({ error: insertData?.message || 'Failed to insert request into Supabase requests table.' });
+      await fetch(`${storageUrl}/rest/v1/requests`, {
+        method: 'POST',
+        headers: insertHeaders,
+        body: JSON.stringify(record)
+      }).catch(() => {});
+
+      await fetch(`${storageUrl}/rest/v1/user_blog_requests`, {
+        method: 'POST',
+        headers: insertHeaders,
+        body: JSON.stringify(record)
+      }).catch(() => {});
+
+      await fetch(`${storageUrl}/rest/v1/${encodeURIComponent('User blog request')}`, {
+        method: 'POST',
+        headers: insertHeaders,
+        body: JSON.stringify(record)
+      }).catch(() => {});
+
+      await fetch(`${storageUrl}/rest/v1/request`, {
+        method: 'POST',
+        headers: insertHeaders,
+        body: JSON.stringify(record)
+      }).catch(() => {});
     }
 
-    // Also insert into user_blog_requests if table exists
-    fetch(`${storageUrl}/rest/v1/user_blog_requests`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${serviceKey}`,
-        apikey: serviceKey,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(record)
-    }).catch(() => {});
-
     // 3. Ping n8n webhook and MCP server endpoint
-    const n8nWebhook = 'https://automated-blogger.app.n8n.cloud/webhook/seo-blog-generator';
-    const n8nMcp = 'https://automated-blogger.app.n8n.cloud/mcp-server/http';
-    fetch(n8nWebhook, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ event: 'new_request', record })
-    }).catch(() => {});
+    const n8nWebhook = customWebhook || process.env.N8N_WEBHOOK_URL || 'https://automated-blogger.app.n8n.cloud/webhook/seo-blog-generator';
+    const n8nMcp = customMcp || process.env.N8N_MCP_URL || 'https://automated-blogger.app.n8n.cloud/mcp-server/http';
 
-    fetch(n8nMcp, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ jsonrpc: '2.0', method: 'notify_request', params: record, id: requestId })
-    }).catch(() => {});
+    const n8nHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (customApiKey) {
+      n8nHeaders['X-N8N-API-KEY'] = customApiKey;
+      n8nHeaders['Authorization'] = `Bearer ${customApiKey}`;
+    }
 
-    res.json({ success: true, requestId, record });
+    let immediateBlog: any = null;
+
+    // Trigger Webhook with flattened + nested payload so all n8n node formats work
+    try {
+      const webhookPayload = {
+        event: 'new_request',
+        trigger: 'supabase_requests_pending',
+        table: 'requests',
+        ...record,
+        record,
+        data: record
+      };
+
+      const wbRes = await fetch(n8nWebhook, {
+        method: 'POST',
+        headers: n8nHeaders,
+        body: JSON.stringify(webhookPayload)
+      });
+
+      if (wbRes.ok) {
+        const wbData = await wbRes.json().catch(() => null);
+        if (wbData && (wbData.title || wbData.content_html || wbData.content || wbData.output)) {
+          immediateBlog = wbData.output || wbData;
+        }
+      }
+    } catch (wbErr) {
+      console.warn('[n8n Webhook Ping Warning]:', wbErr);
+    }
+
+    // Trigger MCP Server endpoint via JSON-RPC 2.0
+    try {
+      fetch(n8nMcp, {
+        method: 'POST',
+        headers: n8nHeaders,
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          method: 'tools/call',
+          params: {
+            name: 'generate_blog',
+            arguments: record
+          },
+          id: requestId
+        })
+      }).catch(() => {});
+
+      fetch(n8nMcp, {
+        method: 'POST',
+        headers: n8nHeaders,
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          method: 'notify_pending_request',
+          params: { table: 'requests', request: record },
+          id: `notify-${requestId}`
+        })
+      }).catch(() => {});
+    } catch (_) {}
+
+    res.json({
+      success: true,
+      requestId,
+      record,
+      immediateBlog: immediateBlog || undefined,
+      n8nNotified: true,
+      message: 'Pending request created in Supabase requests table and sent to n8n Webhook & MCP server.'
+    });
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Workflow trigger failed' });
   }
 });
 
 app.get(['/api/workflow/status', '/workflow/status'], async (req, res) => {
-  const serviceKey = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
-  if (!serviceKey) return res.status(503).json({ error: 'Supabase credentials are not configured.' });
+  const serviceKey = getValidServiceKey(req.headers['x-supabase-key'] as string);
   const requestId = String(req.query.requestId || '');
 
   try {
-    const url = requestId 
-      ? `${storageUrl}/rest/v1/blogs?request_id=eq.${encodeURIComponent(requestId)}&order=created_at.desc&limit=5`
-      : `${storageUrl}/rest/v1/blogs?order=created_at.desc&limit=5`;
-    const response = await fetch(url, {
-      headers: {
-        Authorization: `Bearer ${serviceKey}`,
-        apikey: serviceKey
+    const headers = serviceKey ? { Authorization: `Bearer ${serviceKey}`, apikey: serviceKey } : undefined;
+    
+    // First try by request_id
+    let blogs: any[] = [];
+    if (requestId) {
+      const url = `${storageUrl}/rest/v1/blogs?request_id=eq.${encodeURIComponent(requestId)}&order=created_at.desc&limit=5`;
+      const response = await fetch(url, { headers });
+      blogs = await response.json().catch(() => []);
+    }
+
+    // If no blogs found for specific request_id, check recently created blogs (within last 15 min)
+    if (!Array.isArray(blogs) || blogs.length === 0) {
+      const recentUrl = `${storageUrl}/rest/v1/blogs?order=created_at.desc&limit=5`;
+      const recentRes = await fetch(recentUrl, { headers });
+      const recentBlogs = await recentRes.json().catch(() => []);
+      if (Array.isArray(recentBlogs) && recentBlogs.length > 0) {
+        blogs = recentBlogs;
       }
-    });
-    const blogs = await response.json().catch(() => []);
+    }
+
     res.json({ success: true, blogs: Array.isArray(blogs) ? blogs : [] });
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Workflow status check failed' });
@@ -252,15 +424,12 @@ app.get(['/api/workflow/status', '/workflow/status'], async (req, res) => {
 });
 
 app.get(['/api/workflow/drafts', '/workflow/drafts'], async (req, res) => {
-  const serviceKey = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
-  if (!serviceKey) return res.status(503).json({ error: 'Supabase credentials are not configured.' });
+  const serviceKey = getValidServiceKey(req.headers['x-supabase-key'] as string);
 
   try {
+    const headers = serviceKey ? { Authorization: `Bearer ${serviceKey}`, apikey: serviceKey } : undefined;
     const response = await fetch(`${storageUrl}/rest/v1/blogs?order=created_at.desc&limit=50`, {
-      headers: {
-        Authorization: `Bearer ${serviceKey}`,
-        apikey: serviceKey
-      }
+      headers
     });
     const blogs = await response.json().catch(() => []);
     res.json({ success: true, drafts: Array.isArray(blogs) ? blogs : [] });
@@ -380,31 +549,37 @@ app.get(['/api/status', '/status'], async (req, res) => {
 // Server-side AI Generation supporting Gemini, DeepSeek, Pollinations, and template fallback
 app.post(['/api/ai/generate', '/ai/generate'], async (req, res) => {
   try {
-    const { airlineName, city, country, keyword, tfn, recentPosts, apiKey, geminiApiKey, variationSeed } = req.body;
+    const { airlineName, city, country, keyword, tfn, recentPosts, apiKey, geminiApiKey, variationSeed, blogType } = req.body;
     const previousTitles = (recentPosts && Array.isArray(recentPosts)) 
       ? recentPosts.map((p: any) => p.title).join(', ') 
       : 'None';
 
-    const systemPrompt = `You are a premier aviation journalist and senior SEO content strategist specializing in commercial airline operations, customer service directories, and dispute resolution.
-Your goal is to generate 100% unique, human-grade, deeply helpful blog posts that rank #1 on Google.
+    const entityTypeStr = String(blogType || 'airlines').trim();
+    const entityRole = entityTypeStr === 'hotels' ? 'luxury hospitality directory and hotel guest assistance' :
+                       entityTypeStr === 'travel' ? 'world travel destinations and local visitor information' :
+                       entityTypeStr === 'agency' ? 'travel concierge desks and booking dispute resolution' :
+                       'commercial airline operations and passenger assistance';
+
+    const systemPrompt = `You are a premier SEO content strategist and journalist specializing in ${entityRole}.
+Your goal is to generate 100% unique, human-grade, authoritative blog posts that rank #1 on Google.
 Never use repetitive corporate buzzwords or copy-pasted formulas. Write with high linguistic variety, fresh hooks, distinct paragraph structures, and authentic traveler empathy.`;
 
-    const userPrompt = `Write a comprehensive, engaging, and original SEO guide for the "${airlineName} Office in ${city}, ${country}".
+    const userPrompt = `Write a comprehensive, engaging, and original SEO guide for "${airlineName} in ${city}, ${country}".
 Target Keyword: ${keyword}
 Toll-Free Helpline to naturally embed: ${tfn}
-Unique research brief: Treat "${keyword}" as the primary search intent. Use keyword-specific questions, entities, terminology, and traveler scenarios rather than a generic airline office template.
+Unique research brief: Treat "${keyword}" as the primary search intent. Use keyword-specific questions, entities, terminology, and traveler scenarios.
 Variation seed: ${variationSeed || `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`}
 
 ${recentPosts && recentPosts.length > 0 ? `Previously published titles in this topic cluster: [${previousTitles}]. 
-CRITICAL: Do NOT reuse phrasing, structures, or angles from previous posts. Make this article stand out with a fresh perspective, unique traveler scenarios, and localized context for ${city}.` : ''}
+CRITICAL: Do NOT reuse phrasing, structures, or angles from previous posts. Make this article stand out with a fresh perspective and localized context for ${city}.` : ''}
 
 Requirements:
-1. High-CTR SEO Title (incorporate airline name, city, primary keyword, and clear value proposition). Use a fresh title pattern that differs from previous titles.
+1. High-CTR SEO Title (incorporate entity name, city, primary keyword, and clear value proposition).
 2. Follow this structure: introduction, "What Is [topic]?", "What Happens If...", step-by-step help instructions, fees or conditions, cancellation differences, practical tips, FAQs, and a final contact section.
-3. Write 3 distinct overview paragraphs covering the keyword intent, ${city} traveler context, booking changes, missed connections, and dispute escalations. Use the exact keyword naturally in the title, first paragraph, one subheading, and at least two FAQs.
-4. Provide 6-8 specific services or actions (e.g. ticket reissue, baggage claim tracking, seat upgrades, infant/pet policies, compensation claims, wheelchair assistance).
+3. Write 3 distinct overview paragraphs covering the keyword intent, ${city} traveler context, booking changes, and dispute escalations. Use the exact keyword naturally in the title, first paragraph, one subheading, and at least two FAQs.
+4. Provide 6-8 specific services or actions.
 5. Provide 5 thorough, unique FAQs with realistic answers that seamlessly embed the toll-free assistance number (${tfn}).
-6. Use factual, cautious language. Do not invent an airline rule, fee, route, or legal entitlement. Attribute supplied policy details as published terms when provided.
+6. Use factual, cautious language.
 
 Return valid JSON with this exact structure:
 {
@@ -434,7 +609,9 @@ Return valid JSON with this exact structure:
             })
           });
           const data = await response.json();
-          content = JSON.parse(data?.candidates?.[0]?.content?.parts?.[0]?.text || 'null');
+          const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+          const cleanText = rawText.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '').trim();
+          content = JSON.parse(cleanText || 'null');
         } else {
           const { default: OpenAI } = await import('openai');
           const openai = new OpenAI({
@@ -448,7 +625,9 @@ Return valid JSON with this exact structure:
             messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userPrompt }],
             response_format: { type: 'json_object' }
           });
-          content = JSON.parse(response.choices[0]?.message?.content || 'null');
+          const rawText = response.choices[0]?.message?.content || '';
+          const cleanText = rawText.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '').trim();
+          content = JSON.parse(cleanText || 'null');
         }
         const normalized = normalizeAiContent(content);
         if (normalized) return res.json({ success: true, provider, data: normalized });
@@ -457,7 +636,7 @@ Return valid JSON with this exact structure:
       }
     }
 
-    return res.json({ success: true, provider: 'template', data: fallbackAiContent(airlineName, city, keyword, tfn) });
+    return res.json({ success: true, provider: 'template', data: fallbackAiContent(airlineName, city, keyword, tfn, entityTypeStr) });
   } catch (err: any) {
     console.error('[AI Generate API Error]:', err);
     res.status(500).json({ error: err.message || 'AI Generation failed.' });

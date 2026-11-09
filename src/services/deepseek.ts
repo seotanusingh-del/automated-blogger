@@ -79,18 +79,19 @@ export async function generateDeepSeekContent(
   tfn: string,
   recentPosts: any[] = [],
   variationSeed = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-  provider: AiProvider = getAiProvider()
+  provider: AiProvider = getAiProvider(),
+  blogType = 'airlines'
 ): Promise<BlogPostContent> {
   const previousTitles = recentPosts.map(p => p.title).join(', ');
   const requestVariationSeed = variationSeed || `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   
-  const systemPrompt = `You are a premier aviation journalist and senior SEO content strategist specializing in commercial airline operations, customer service directories, and dispute resolution.
+  const systemPrompt = `You are a premier SEO content strategist and journalist specializing in ${blogType}.
 Your goal is to generate 100% unique, human-grade, deeply helpful blog posts that rank #1 on Google.
 Never use repetitive corporate buzzwords or copy-pasted formulas. Write with high linguistic variety, fresh hooks, distinct paragraph structures, and authentic traveler empathy.`;
 
-  const userPrompt = `Write a comprehensive, engaging, and original SEO guide for the "${airlineName} Office in ${city}, ${country}".
+  const userPrompt = `Write a comprehensive, engaging, and original SEO guide for "${airlineName} in ${city}, ${country}".
 Target Keyword: ${keyword}
-Unique research brief: Treat "${keyword}" as the primary search intent. Build the article around specific questions, entities, terminology, and traveler problems implied by that keyword. Do not fall back to a generic airline office article.
+Unique research brief: Treat "${keyword}" as the primary search intent. Build the article around specific questions, entities, terminology, and traveler problems implied by that keyword.
 Variation seed: ${requestVariationSeed}
 Toll-Free Helpline to naturally embed: ${tfn}
 
@@ -98,12 +99,12 @@ ${recentPosts && recentPosts.length > 0 ? `Previously published titles in this t
 CRITICAL: Do NOT reuse phrasing, structures, or angles from previous posts. Make this article stand out with a fresh perspective, unique traveler scenarios, and localized context for ${city}.` : ''}
 
 Requirements:
-1. High-CTR SEO Title (incorporate airline name, city, primary keyword, and clear value proposition). Use a fresh title pattern that is materially different from previous titles.
-2. Follow this reader-friendly structure: introduction, "What Is [topic]?", "What Happens If...", step-by-step rebooking/help instructions, fees or conditions, cancellation differences, practical tips, FAQs, and a final contact section.
-3. Engaging, in-depth overview (3 distinct paragraphs) covering the keyword intent, ${city} traveler context, booking changes, missed connections, and dispute escalations. Use the user's exact keyword naturally in the title, first paragraph, one subheading, and at least two FAQs.
-4. 6-8 specific services or actions (e.g. ticket reissue, baggage claim tracking, seat upgrades, infant/pet policies, compensation claims, wheelchair assistance).
+1. High-CTR SEO Title (incorporate entity name, city, primary keyword, and clear value proposition).
+2. Follow this reader-friendly structure: introduction, "What Is [topic]?", "What Happens If...", step-by-step instructions, fees or conditions, cancellation differences, practical tips, FAQs, and a final contact section.
+3. Engaging, in-depth overview (3 distinct paragraphs) covering the keyword intent, ${city} traveler context, booking changes, and dispute escalations. Use the user's exact keyword naturally in the title, first paragraph, one subheading, and at least two FAQs.
+4. 6-8 specific services or actions.
 5. 5 thorough, unique FAQs with realistic answers that seamlessly embed the toll-free assistance number (${tfn}).
-6. Use factual, cautious language: do not invent an airline rule, fee, route, or legal entitlement. Attribute supplied policy details as published terms when the user provides them.
+6. Use factual, cautious language.
 
 Return valid JSON with this exact structure:
 {
@@ -113,7 +114,7 @@ Return valid JSON with this exact structure:
   "faqs": [{"question": "...", "answer": "..."}]
 }`;
 
-  const cachedKey = `easyflight_ai_cache:${provider}:${airlineName}:${city}:${keyword}`;
+  const cachedKey = `easyflight_ai_cache:${provider}:${blogType}:${airlineName}:${city}:${keyword}`;
   const cached = localStorage.getItem(cachedKey);
   if (cached) {
     try { return JSON.parse(cached) as BlogPostContent; } catch { localStorage.removeItem(cachedKey); }
@@ -134,7 +135,8 @@ Return valid JSON with this exact structure:
         recentPosts,
         variationSeed: requestVariationSeed,
         apiKey: customKey || undefined,
-        geminiApiKey: getGeminiApiKey() || undefined
+        geminiApiKey: getGeminiApiKey() || undefined,
+        blogType
       })
     });
 
