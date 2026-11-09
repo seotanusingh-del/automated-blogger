@@ -81,6 +81,8 @@ const N8N_BLOG_WEBHOOK = 'https://automated-blogger.app.n8n.cloud/webhook/seo-bl
 import {
   getRecentPosts,
   getBlogTableDrafts,
+  createPendingBlogRequest,
+  getBlogsForRequest,
   StoredBlogDraft,
   listPublicBucketImages,
   savePostToSupabase,
@@ -208,6 +210,7 @@ export default function App() {
   const [draftNameInput, setDraftNameInput] = useState('');
   const [supabaseDrafts, setSupabaseDrafts] = useState<SavedTemplate[]>([]);
   const [isLoadingSupabaseDrafts, setIsLoadingSupabaseDrafts] = useState(false);
+  const [workflowRequestId, setWorkflowRequestId] = useState<string | null>(null);
   const [showDraftPicker, setShowDraftPicker] = useState(false);
   const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null);
 
@@ -870,33 +873,40 @@ export default function App() {
   const handleGenerateWithWorkflow = async () => {
     if (isGeneratingBulk) return;
     setIsGeneratingBulk(true);
-    setStatusMessage('Sending one token-saving generation request to the workflow...');
+    const requestId = crypto.randomUUID();
+    setWorkflowRequestId(requestId);
+    setStatusMessage('Saving one pending request for n8n...');
     try {
-      const response = await fetch(N8N_BLOG_WEBHOOK, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          blogType,
-          keyword: targetKeyword.trim(),
-          topic: targetKeyword.trim(),
-          companyName: companyName.trim(),
-          companyWebsite: socialLinks.website || '',
-          email: contactEmail.trim(),
-          tfn: commonTfn,
-          seo: {
-            searchIntent: 'informational and commercial',
-            includeFaqs: true,
-            includeStructuredHtml: true,
-            includeInternalLinks: true
-          },
-          request: 'Return exactly one SEO blog as title, content_html, and optional banner_url. The app will adapt this single article for every selected Step 2 entry.'
-        })
+      await createPendingBlogRequest({
+        id: requestId,
+        blog_type: blogType,
+        company_name: companyName.trim(),
+        company_email: contactEmail.trim(),
+        company_website: socialLinks.website || '',
+        keyword: targetKeyword.trim(),
+        topic: targetKeyword.trim(),
+        tfn: commonTfn,
+        status: 'pending',
+        payload: {
+          seo: { searchIntent: 'informational and commercial', includeFaqs: true, includeStructuredHtml: true, includeInternalLinks: true },
+          selected_entry_count: selectedAirlines.length,
+          request: 'Create exactly one blog and save it to blogs with this request_id.'
+        }
       });
-      const result = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(result.error || `Workflow returned ${response.status}.`);
-      const payload = Array.isArray(result) ? result[0] : (result.data || result);
+      setStatusMessage('Request is pending. Waiting for n8n to save the generated blog...');
+      let payload: Record<string, unknown> | null = null;
+      for (let attempt = 0; attempt < 24; attempt += 1) {
+        await new Promise(resolve => window.setTimeout(resolve, 5000));
+        const blogs = await getBlogsForRequest(requestId);
+        if (blogs.length) {
+          payload = blogs[0] as Record<string, unknown>;
+          break;
+        }
+        setStatusMessage(`Waiting for n8n workflow completion... (${attempt + 1}/24)`);
+      }
+      if (!payload) throw new Error('n8n has not returned a blog yet. Check the requests and blogs tables, then refresh drafts.');
       const title = String(payload.title || targetKeyword || 'SEO travel guide');
-      const content = String(payload.content_html || payload.content || payload.html || '');
+      const content = String(payload.content_html || payload.html_content || payload.content || payload.html || '');
       if (!content) throw new Error('Workflow returned no article HTML.');
       const banner = String(payload.banner_url || payload.image_url || customImages[0] || '');
         const entries = selectedAirlines.length > 0 ? selectedAirlines : airlines;
@@ -920,7 +930,7 @@ export default function App() {
       setGeneratedPosts(queue);
       setCurrentPostIndex(0);
       setActiveSection('review');
-      setStatusMessage(`Workflow returned one article and adapted it into ${queue.length} review-ready blog${queue.length === 1 ? '' : 's'}.`);
+      setStatusMessage(`n8n workflow completed. One blog was adapted into ${queue.length} review-ready blog${queue.length === 1 ? '' : 's'}.`);
     } catch (error) {
       console.error('n8n workflow generation failed:', error);
       setStatusMessage(error instanceof Error ? error.message : 'n8n workflow generation failed.');

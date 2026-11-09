@@ -84,17 +84,52 @@ export interface StoredBlogDraft {
   [key: string]: unknown;
 }
 
+export interface BlogRequestInput {
+  id: string;
+  blog_type: string;
+  company_name: string;
+  company_email: string;
+  company_website: string;
+  keyword: string;
+  topic: string;
+  tfn: string;
+  status: 'pending';
+  payload: Record<string, unknown>;
+}
+
 export async function getBlogTableDrafts(limit = 100): Promise<StoredBlogDraft[]> {
   if (!supabase) return [];
   const { data, error } = await supabase
-    .from('blog')
+    .from('blogs')
     .select('*')
     .order('created_at', { ascending: false })
     .limit(limit);
   if (error) {
     console.error('Could not load drafts from Supabase blog table:', error);
-    throw new Error(`Supabase blog drafts could not be loaded: ${error.message}`);
+    throw new Error(`Supabase blogs could not be loaded: ${error.message}`);
   }
+
+  return (data || []) as StoredBlogDraft[];
+}
+
+export async function createPendingBlogRequest(request: BlogRequestInput): Promise<BlogRequestInput> {
+  if (!supabase) throw new Error('Supabase is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.');
+  const { error: deleteError } = await supabase.from('requests').delete().neq('id', '');
+  if (deleteError) throw new Error(`Could not clear the previous blog request: ${deleteError.message}`);
+  const { data, error } = await supabase.from('requests').insert(request).select().single();
+  if (error) throw new Error(`Could not create the pending blog request: ${error.message}`);
+  return data as BlogRequestInput;
+}
+
+export async function getBlogsForRequest(requestId: string): Promise<StoredBlogDraft[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from('blogs')
+    .select('*')
+    .eq('request_id', requestId)
+    .order('created_at', { ascending: false })
+    .limit(10);
+  if (error) throw new Error(`Could not read generated blogs: ${error.message}`);
   return (data || []) as StoredBlogDraft[];
 }
 

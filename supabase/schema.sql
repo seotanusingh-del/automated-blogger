@@ -75,8 +75,41 @@ create table if not exists public.blog_history (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists public.requests (
+  id text primary key,
+  blog_type text not null,
+  company_name text not null default '',
+  company_email text not null default '',
+  company_website text not null default '',
+  keyword text not null default '',
+  topic text not null default '',
+  tfn text not null default '',
+  status text not null default 'pending' check (status in ('pending', 'processing', 'completed', 'error')),
+  payload jsonb not null default '{}'::jsonb,
+  error_message text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.blogs (
+  id uuid primary key default gen_random_uuid(),
+  request_id text references public.requests(id) on delete set null,
+  blog_type text not null default '',
+  title text not null default '',
+  keyword text not null default '',
+  topic text not null default '',
+  content_html text not null default '',
+  banner_url text,
+  status text not null default 'Draft',
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 create index if not exists blog_entities_workspace_idx on public.blog_entities(workspace_id);
 create index if not exists blog_assets_workspace_idx on public.blog_assets(workspace_id);
 create index if not exists blog_drafts_workspace_idx on public.blog_drafts(workspace_id);
 create index if not exists blog_templates_workspace_idx on public.blog_templates(workspace_id);
 create index if not exists blog_history_workspace_idx on public.blog_history(workspace_id);
+create index if not exists requests_status_idx on public.requests(status, created_at desc);
+create index if not exists blogs_request_idx on public.blogs(request_id, created_at desc);
