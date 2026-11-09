@@ -736,12 +736,7 @@ export default function App() {
   };
 
   const openDraftPicker = () => {
-    if (!availableDraftSources.length) {
-      setActiveSection('drafts');
-      setStatusMessage('Create a template or refresh Supabase drafts first.');
-      return;
-    }
-    setSelectedSourceId(availableDraftSources[0].id);
+    setSelectedSourceId(availableDraftSources[0]?.id || null);
     setShowDraftPicker(true);
   };
 
@@ -1635,11 +1630,10 @@ export default function App() {
             <span className="font-semibold">Public Site</span>
           </button>
           
-          {/* Connection Status Badge (Clickable to inspect/update token) */}
+          {/* Google connection status */}
           <button
             onClick={() => setShowRefreshTokenModal(true)}
-            hidden
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold transition cursor-pointer ${
+            className={`flex items-center gap-1.5 rounded-lg border p-2 text-xs font-semibold transition cursor-pointer ${
             isBackendConnected
               ? isDarkMode
                 ? 'bg-emerald-950/40 border-emerald-800 text-emerald-400 hover:bg-emerald-950/60'
@@ -1648,11 +1642,12 @@ export default function App() {
                 ? 'bg-amber-950/40 border-amber-800 text-amber-400 hover:bg-amber-950/60'
                 : 'bg-amber-50 border-amber-300 text-amber-700 hover:bg-amber-100'
           }`}
-            title="Click to view or update Google Blogger Refresh Token"
+            title={isBackendConnected ? 'Google connection active. Click to manage the refresh token.' : 'Google connection inactive or expired. Click to update the refresh token.'}
+            aria-label={isBackendConnected ? 'Google connection active' : 'Google connection inactive'}
           >
-            <Globe className="w-3.5 h-3.5" />
-            <span>{isBackendConnected ? 'Google Connected' : 'Google Token Needed'}</span>
-            <span className={`w-2 h-2 rounded-full ${isBackendConnected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
+            <span className={`h-2.5 w-2.5 rounded-full ${isBackendConnected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
+            <Key className="h-4 w-4" />
+            <span className="hidden sm:inline">{isBackendConnected ? 'Google active' : 'Google inactive'}</span>
           </button>
 
           {/* Google Refresh Token Button */}
@@ -1796,8 +1791,8 @@ export default function App() {
           {([
             ['setup', '1. Setup & branding'],
             ['airlines', `2. ${entryLabelPlural}`],
-            ['drafts', '3. Drafts & templates'],
-            ['review', '4. Review & publish'],
+            ['review', '3. Review & publish'],
+            ['drafts', '4. Drafts & templates'],
             ['history', '5. History & export']
           ] as const).map(([section, label]) => (
             <button key={section} type="button" onClick={() => { setActiveSection(section); setIsSidebarOpen(false); }} className={`block w-full rounded-lg px-3 py-2 text-left ${activeSection === section ? 'bg-sky-600 text-white' : 'hover:bg-sky-500/10 hover:text-sky-500'}`}>{label}</button>
@@ -2959,7 +2954,20 @@ export default function App() {
                   </span>
                 </label>
               ))}
+              {!availableDraftSources.length && (
+                <div className="rounded-xl border border-dashed border-slate-300 p-4 text-center dark:border-slate-700">
+                  <p className="text-xs font-bold">No saved drafts or templates yet</p>
+                  <p className="mt-1 text-[11px] text-slate-500">Create one from the Drafts &amp; Templates step, or refresh n8n/Supabase drafts.</p>
+                  <button type="button" onClick={() => { setShowDraftPicker(false); setActiveSection('drafts'); }} className="mt-3 rounded-lg bg-violet-600 px-3 py-2 text-[11px] font-bold text-white">Open template manager</button>
+                </div>
+              )}
             </div>
+            {selectedSourceId && (
+              <div className="mt-3 rounded-xl border p-3 dark:border-slate-800">
+                <p className="text-[11px] font-black uppercase tracking-wide text-slate-500">Preview</p>
+                <div className="mt-2 max-h-40 overflow-y-auto rounded-lg bg-slate-500/5 p-3 text-xs" dangerouslySetInnerHTML={{ __html: availableDraftSources.find(source => source.id === selectedSourceId)?.htmlContent || '<p>No preview content available.</p>' }} />
+              </div>
+            )}
             <div className="mt-4 flex justify-end gap-2">
               <button type="button" onClick={() => { setShowDraftPicker(false); setActiveSection('drafts'); }} className="rounded-lg border px-3 py-2 text-[11px] font-semibold">Manage drafts</button>
               <button type="button" onClick={generateFromSelectedSource} disabled={!selectedSourceId} className="rounded-lg bg-sky-600 px-3 py-2 text-[11px] font-bold text-white disabled:opacity-50">Generate content</button>
