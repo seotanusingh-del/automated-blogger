@@ -159,36 +159,39 @@ Return valid JSON with this exact structure:
       }
     }
   } catch (backendError: any) {
-    // If backend proxy failed with a non-404 error (e.g. rate limit, bad prompt), propagate or fallback to client
+    console.warn('[AI Generation Backend Notice]:', backendError?.message);
     const customKey = getDeepSeekApiKey();
-    if (!customKey) return buildKeywordFallback(airlineName, city, keyword, tfn);
+    if (customKey && customKey.trim().length > 10) {
+      try {
+        const { default: OpenAI } = await import('openai');
+        const openai = new OpenAI({
+          apiKey: customKey.trim(),
+          baseURL: 'https://api.deepseek.com',
+          dangerouslyAllowBrowser: true
+        });
 
-    // Client-side fallback if customKey is present
-    const { default: OpenAI } = await import('openai');
-    const openai = new OpenAI({
-      apiKey: customKey,
-      baseURL: 'https://api.deepseek.com',
-      dangerouslyAllowBrowser: true
-    });
+        const response = await openai.chat.completions.create({
+          model: 'deepseek-chat',
+          temperature: 0.85,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt }
+          ],
+          response_format: { type: 'json_object' }
+        });
 
-    const response = await openai.chat.completions.create({
-      model: 'deepseek-chat',
-      temperature: 0.85,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt }
-      ],
-      response_format: { type: 'json_object' }
-    });
-
-    const content = response.choices[0].message.content;
-    if (!content) throw new Error('Empty response from DeepSeek');
-    
-    const parsed = JSON.parse(content) as BlogPostContent;
-    if (!parsed.title || !parsed.overview || !Array.isArray(parsed.services) || !Array.isArray(parsed.faqs)) {
-      throw new Error('DeepSeek returned incomplete blog content.');
+        const content = response.choices[0]?.message?.content;
+        if (content) {
+          const parsed = JSON.parse(content) as BlogPostContent;
+          if (parsed.title && parsed.overview && Array.isArray(parsed.services) && Array.isArray(parsed.faqs)) {
+            return parsed;
+          }
+        }
+      } catch (clientErr) {
+        console.warn('[Client AI Generation Notice]:', clientErr);
+      }
     }
-    return parsed;
+    return buildKeywordFallback(airlineName, city, keyword, tfn);
   }
   return buildKeywordFallback(airlineName, city, keyword, tfn);
 }

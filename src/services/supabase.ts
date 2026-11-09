@@ -98,6 +98,18 @@ export interface BlogRequestInput {
 }
 
 export async function getBlogTableDrafts(limit = 100): Promise<StoredBlogDraft[]> {
+  try {
+    const res = await fetch('/api/workflow/drafts');
+    if (res.ok) {
+      const json = await res.json();
+      if (Array.isArray(json.drafts) && json.drafts.length > 0) {
+        return json.drafts as StoredBlogDraft[];
+      }
+    }
+  } catch (apiErr) {
+    console.warn('[Supabase API Drafts Warning]:', apiErr);
+  }
+
   if (!supabase) return [];
   const { data, error } = await supabase
     .from('blogs')
@@ -106,31 +118,70 @@ export async function getBlogTableDrafts(limit = 100): Promise<StoredBlogDraft[]
     .limit(limit);
   if (error) {
     console.error('Could not load drafts from Supabase blog table:', error);
-    throw new Error(`Supabase blogs could not be loaded: ${error.message}`);
+    return [];
   }
 
   return (data || []) as StoredBlogDraft[];
 }
 
 export async function createPendingBlogRequest(request: BlogRequestInput): Promise<BlogRequestInput> {
-  if (!supabase) throw new Error('Supabase is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.');
-  const { error: deleteError } = await supabase.from('requests').delete().neq('id', '');
-  if (deleteError) throw new Error(`Could not clear the previous blog request: ${deleteError.message}`);
-  const { data, error } = await supabase.from('requests').insert(request).select().single();
-  if (error) throw new Error(`Could not create the pending blog request: ${error.message}`);
-  return data as BlogRequestInput;
+  // 1. Try server-side proxy route first (works without client keys)
+  try {
+    const res = await fetch('/api/workflow/trigger', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(request)
+    });
+    if (res.ok) {
+      const json = await res.json();
+      if (json.success) {
+        return (json.record || request) as BlogRequestInput;
+      }
+    }
+  } catch (apiErr) {
+    console.warn('[Workflow API Trigger Warning]:', apiErr);
+  }
+
+  // 2. Direct client-side Supabase fallback if available
+  if (supabase) {
+    try {
+      await supabase.from('requests').delete().neq('id', '');
+    } catch (_) {}
+    try {
+      const { data, error } = await supabase.from('requests').insert(request).select().single();
+      if (!error && data) return data as BlogRequestInput;
+    } catch (_) {}
+  }
+
+  return request;
 }
 
 export async function getBlogsForRequest(requestId: string): Promise<StoredBlogDraft[]> {
-  if (!supabase) return [];
-  const { data, error } = await supabase
-    .from('blogs')
-    .select('*')
-    .eq('request_id', requestId)
-    .order('created_at', { ascending: false })
-    .limit(10);
-  if (error) throw new Error(`Could not read generated blogs: ${error.message}`);
-  return (data || []) as StoredBlogDraft[];
+  // 1. Try server-side status endpoint first
+  try {
+    const res = await fetch(`/api/workflow/status?requestId=${encodeURIComponent(requestId)}`);
+    if (res.ok) {
+      const json = await res.json();
+      if (Array.isArray(json.blogs) && json.blogs.length > 0) {
+        return json.blogs as StoredBlogDraft[];
+      }
+    }
+  } catch (apiErr) {
+    console.warn('[Workflow API Status Warning]:', apiErr);
+  }
+
+  // 2. Direct client-side Supabase fallback
+  if (supabase) {
+    const { data, error } = await supabase
+      .from('blogs')
+      .select('*')
+      .eq('request_id', requestId)
+      .order('created_at', { ascending: false })
+      .limit(10);
+    if (!error && data) return data as StoredBlogDraft[];
+  }
+
+  return [];
 }
 
 /**

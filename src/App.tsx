@@ -63,6 +63,9 @@ import { ReviewQueueManager } from './components/ReviewQueueManager';
 import { BloggerSubSettingsTab } from './components/BloggerSubSettingsTab';
 import { RefreshTokenModal } from './components/RefreshTokenModal';
 import { PublicLandingPage } from './components/PublicLandingPage';
+import { TemplatePickerModal } from './components/TemplatePickerModal';
+import { TemplateDraftManager } from './components/TemplateDraftManager';
+import { DEFAULT_MASTER_TEMPLATES } from './data/defaultTemplates';
 import { 
   generateDeepSeekContent, 
   BlogPostContent, 
@@ -212,6 +215,7 @@ export default function App() {
   const [isLoadingSupabaseDrafts, setIsLoadingSupabaseDrafts] = useState(false);
   const [workflowRequestId, setWorkflowRequestId] = useState<string | null>(null);
   const [showDraftPicker, setShowDraftPicker] = useState(false);
+  const [showTemplatePickerModal, setShowTemplatePickerModal] = useState(false);
   const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null);
 
   // Queue & Review State (Hydrates compact storage or full draft)
@@ -695,13 +699,14 @@ export default function App() {
     setStatusMessage('Draft template added to the review queue.');
   };
 
-  const applySourceToSelectedEntries = (source: SavedTemplate) => {
+  const applySourceToSelectedEntries = (source: any) => {
     const entries = selectedAirlines.length ? selectedAirlines : airlines;
     if (!entries.length) {
-      setStatusMessage('Select at least one Step 2 entry first.');
+      setStatusMessage(`Select at least one ${entryLabel.toLowerCase()} in Step 2 first.`);
       setActiveSection('airlines');
       return;
     }
+    const currentTheme = isDarkMode ? 'dark' : 'light';
     const queue: GeneratedPost[] = [];
     entries.forEach((entry, entryIndex) => {
       const offices = entry.offices.length ? entry.offices : [{
@@ -711,7 +716,26 @@ export default function App() {
         country: 'Worldwide'
       }];
       offices.forEach((office, officeIndex) => {
-        const imageUrl = source.imageUrl || customImages[(entryIndex + officeIndex) % Math.max(customImages.length, 1)] || generateOfficeBannerSvg(entry.name, office.name, office.city, commonTfn, isDarkMode ? 'dark' : 'light', companyName, companyLogoUrl, socialLinks.website);
+        const banner = source.imageUrl || source.banner_url || customImages[(entryIndex + officeIndex) % Math.max(customImages.length, 1)] || generateOfficeBannerSvg(entry.name, office.name, office.city, commonTfn, currentTheme, companyName, companyLogoUrl, socialLinks.website);
+        const rawTitle = source.title || `${entry.name} ${office.city} Office Guide`;
+        const rawKeyword = source.keyword || targetKeyword;
+        const rawHtml = source.htmlContent || source.content_html || source.content || '';
+
+        const title = rawTitle
+          .replace(/\{\{(entry|airline|brand)\}\}/gi, entry.name)
+          .replace(/\{\{city\}\}/gi, office.city)
+          .replace(/\{\{country\}\}/gi, office.country)
+          .replace(/\{\{tfnNumber\}\}/gi, commonTfn)
+          .replace(/\{\{companyName\}\}/gi, companyName || entry.name);
+
+        const htmlContent = rawHtml
+          .replace(/\{\{(entry|airline|brand)\}\}/gi, entry.name)
+          .replace(/\{\{city\}\}/gi, office.city)
+          .replace(/\{\{country\}\}/gi, office.country)
+          .replace(/\{\{tfnNumber\}\}/gi, commonTfn)
+          .replace(/\{\{bannerUrl\}\}/gi, banner)
+          .replace(/\{\{companyName\}\}/gi, companyName || entry.name);
+
         queue.push({
           ...source,
           id: `draft-${Date.now()}-${entryIndex}-${officeIndex}`,
@@ -719,20 +743,25 @@ export default function App() {
           officeName: office.name,
           city: office.city,
           country: office.country,
-          title: source.title.replace(/\{\{(entry|airline|brand)\}\}/gi, entry.name),
-          keyword: source.keyword || targetKeyword,
-          imageUrl,
-          htmlContent: source.htmlContent.replace(/\{\{(entry|airline|brand)\}\}/gi, entry.name),
-          status: 'Draft',
+          title,
+          keyword: rawKeyword.replace(/\{\{(entry|airline|brand)\}\}/gi, entry.name).replace(/\{\{city\}\}/gi, office.city),
+          slug: title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''),
+          tfnNumber: commonTfn,
+          imageUrl: banner,
+          htmlContent,
+          status: 'Ready',
           publishedUrl: undefined,
-          verified: false
+          verified: true,
+          isAiGenerated: true,
+          companyName,
+          companyLogoUrl
         });
       });
     });
     setGeneratedPosts(queue);
     setCurrentPostIndex(0);
     setActiveSection('review');
-    setStatusMessage(`Created ${queue.length} drafts from "${source.templateName || source.title}".`);
+    setStatusMessage(`Applied template "${source.templateName || source.title}" to ${queue.length} articles! Ready for review & publishing.`);
   };
 
   const openDraftPicker = () => {
@@ -870,42 +899,57 @@ export default function App() {
     setIsGeneratingBulk(true);
     const requestId = crypto.randomUUID();
     setWorkflowRequestId(requestId);
-    setStatusMessage('Saving one pending request for n8n...');
+    setStatusMessage('Triggering workflow: Saving pending request to Supabase table requests...');
+
+    const firstEntry = selectedAirlines[0] || airlines[0];
+    const firstOffice = firstEntry?.offices?.[0];
+
     try {
       await createPendingBlogRequest({
         id: requestId,
         blog_type: blogType,
-        company_name: companyName.trim(),
+        company_name: companyName.trim() || 'Aviation Travel Desk',
         company_email: contactEmail.trim(),
         company_website: socialLinks.website || '',
         keyword: targetKeyword.trim(),
         topic: targetKeyword.trim(),
         tfn: commonTfn,
+        tfn_number: commonTfn,
+        airline_name: firstEntry?.name || 'Airline',
+        city: firstOffice?.city || 'Headquarters',
         status: 'pending',
         payload: {
+          tfn_number: commonTfn,
           seo: { searchIntent: 'informational and commercial', includeFaqs: true, includeStructuredHtml: true, includeInternalLinks: true },
           selected_entry_count: selectedAirlines.length,
           request: 'Create exactly one blog and save it to blogs with this request_id.'
         }
-      });
-      setStatusMessage('Request is pending. Waiting for n8n to save the generated blog...');
+      } as any);
+
+      setStatusMessage('Pending request created! Notifying n8n and waiting for generated blog in blogs table...');
       let payload: Record<string, unknown> | null = null;
-      for (let attempt = 0; attempt < 24; attempt += 1) {
-        await new Promise(resolve => window.setTimeout(resolve, 5000));
+      for (let attempt = 0; attempt < 20; attempt += 1) {
+        await new Promise(resolve => window.setTimeout(resolve, 3500));
         const blogs = await getBlogsForRequest(requestId);
         if (blogs.length) {
           payload = blogs[0] as Record<string, unknown>;
           break;
         }
-        setStatusMessage(`Waiting for n8n workflow completion... (${attempt + 1}/24)`);
+        setStatusMessage(`Waiting for n8n workflow execution... (${attempt + 1}/20)`);
       }
-      if (!payload) throw new Error('n8n has not returned a blog yet. Check the requests and blogs tables, then refresh drafts.');
+
+      if (!payload) {
+        setStatusMessage('Workflow triggered! A pending request was created in table requests. Check your n8n execution or click "Check n8n Output" in Step 4 when ready.');
+        return;
+      }
+
       const title = String(payload.title || targetKeyword || 'SEO travel guide');
       const content = String(payload.content_html || payload.html_content || payload.content || payload.html || '');
       if (!content) throw new Error('Workflow returned no article HTML.');
       const banner = String(payload.banner_url || payload.image_url || customImages[0] || '');
-        const entries = selectedAirlines.length > 0 ? selectedAirlines : airlines;
+      const entries = selectedAirlines.length > 0 ? selectedAirlines : airlines;
       if (!entries.length) throw new Error('Add and select at least one entry in Step 2 before running the workflow.');
+
       const queue: GeneratedPost[] = [];
       entries.forEach((entry, entryIndex) => {
         const offices = entry.offices.length ? entry.offices : [{ id: `${entry.id}-hq`, name: `${entry.name} Headquarters`, city: 'Headquarters', country: 'United States' }];
@@ -925,7 +969,7 @@ export default function App() {
       setGeneratedPosts(queue);
       setCurrentPostIndex(0);
       setActiveSection('review');
-      setStatusMessage(`n8n workflow completed. One blog was adapted into ${queue.length} review-ready blog${queue.length === 1 ? '' : 's'}.`);
+      setStatusMessage(`⚡ n8n workflow generated blog successfully! Created ${queue.length} review-ready post${queue.length === 1 ? '' : 's'}.`);
     } catch (error) {
       console.error('n8n workflow generation failed:', error);
       setStatusMessage(error instanceof Error ? error.message : 'n8n workflow generation failed.');
@@ -1630,24 +1674,26 @@ export default function App() {
             <span className="font-semibold">Public Site</span>
           </button>
           
-          {/* Google connection status */}
+          {/* Google connection status (Green = Active, Yellow = Inactive/Expired) */}
           <button
             onClick={() => setShowRefreshTokenModal(true)}
-            className={`flex items-center gap-1.5 rounded-lg border p-2 text-xs font-semibold transition cursor-pointer ${
-            isBackendConnected
-              ? isDarkMode
-                ? 'bg-emerald-950/40 border-emerald-800 text-emerald-400 hover:bg-emerald-950/60'
-                : 'bg-emerald-50 border-emerald-300 text-emerald-700 hover:bg-emerald-100'
-              : isDarkMode
-                ? 'bg-amber-950/40 border-amber-800 text-amber-400 hover:bg-amber-950/60'
-                : 'bg-amber-50 border-amber-300 text-amber-700 hover:bg-amber-100'
-          }`}
-            title={isBackendConnected ? 'Google connection active. Click to manage the refresh token.' : 'Google connection inactive or expired. Click to update the refresh token.'}
+            className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-bold transition cursor-pointer shadow-sm ${
+              isBackendConnected
+                ? isDarkMode
+                  ? 'bg-emerald-950/40 border-emerald-600 text-emerald-300 hover:bg-emerald-900/50'
+                  : 'bg-emerald-50 border-emerald-400 text-emerald-800 hover:bg-emerald-100'
+                : isDarkMode
+                  ? 'bg-amber-950/40 border-amber-600 text-amber-300 hover:bg-amber-900/50'
+                  : 'bg-amber-50 border-amber-400 text-amber-800 hover:bg-amber-100'
+            }`}
+            title={isBackendConnected ? 'Google connection is ACTIVE. Click to manage or refresh token.' : 'Google connection is INACTIVE or token has expired. Click to enter a new refresh token.'}
             aria-label={isBackendConnected ? 'Google connection active' : 'Google connection inactive'}
           >
-            <span className={`h-2.5 w-2.5 rounded-full ${isBackendConnected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
-            <Key className="h-4 w-4" />
-            <span className="hidden sm:inline">{isBackendConnected ? 'Google active' : 'Google inactive'}</span>
+            <span className={`h-2.5 w-2.5 rounded-full flex-shrink-0 ${isBackendConnected ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.9)] animate-pulse' : 'bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.9)]'}`} />
+            <Key className={`h-3.5 w-3.5 ${isBackendConnected ? 'text-emerald-500' : 'text-amber-500'}`} />
+            <span className="inline font-bold">
+              {isBackendConnected ? 'Google: Active' : 'Google: Inactive'}
+            </span>
           </button>
 
           {/* Google Refresh Token Button */}
@@ -1833,7 +1879,7 @@ export default function App() {
       <main className={`flex-1 w-full max-w-7xl mx-auto p-3 pb-24 sm:p-5 sm:pb-24 transition-[margin] duration-200 ${isSidebarOpen ? 'ml-[min(86vw,20rem)]' : 'ml-0'}`}>
 
         {/* LEFT COLUMN: Controls, TFN, Keyword, Airline Selector */}
-        <div id="workspace-controls" className={`w-full max-w-6xl mx-auto space-y-4 ${activeSection === 'review' || activeSection === 'history' ? 'hidden' : ''}`}>
+        <div id="workspace-controls" className={`w-full max-w-6xl mx-auto space-y-4 ${activeSection === 'setup' || activeSection === 'airlines' ? '' : 'hidden'}`}>
           
           <div className={`border rounded-2xl p-5 shadow-sm space-y-4 transition-colors ${
             isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
@@ -2048,26 +2094,29 @@ export default function App() {
                   onClick={handleGenerateBulkAI}
                   disabled={isGeneratingBulk || selectedAirlines.length === 0}
                   className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-bold transition flex items-center gap-1.5 flex-1 justify-center shadow"
-                  title="Generate unique, human-grade SEO articles"
+                  title="Generate unique, human-grade SEO articles using AI"
                 >
                   <Sparkles className={`w-4 h-4 ${isGeneratingBulk && bulkProgress ? 'animate-spin' : ''}`} />
-                  {isGeneratingBulk && bulkProgress ? 'Writing...' : '✨ Generate content'}
+                  {isGeneratingBulk && bulkProgress ? 'Writing...' : '✨ Generate with AI'}
                 </button>
                 <button
                   type="button"
-                  onClick={openDraftPicker}
-                  className="px-3 py-2.5 rounded-xl border border-slate-300 text-slate-700 dark:border-slate-700 dark:text-slate-200 text-xs font-bold transition disabled:opacity-50 flex-1 justify-center"
+                  onClick={() => setShowTemplatePickerModal(true)}
+                  className="px-3 py-2.5 rounded-xl border border-slate-300 text-slate-700 dark:border-slate-700 dark:text-slate-200 text-xs font-bold transition hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50 flex-1 justify-center flex items-center gap-1.5"
+                  title="Choose from master templates or saved drafts with live preview"
                 >
-                  From drafts &amp; templates
+                  <FileCode className="w-3.5 h-3.5 text-violet-500" />
+                  <span>Drafts &amp; Templates</span>
                 </button>
                 <button
                   type="button"
                   onClick={handleGenerateWithWorkflow}
                   disabled={isGeneratingBulk}
-                  className="px-3 py-2.5 rounded-xl border border-violet-300 bg-violet-500/10 text-violet-700 dark:text-violet-300 text-xs font-bold transition disabled:opacity-50 flex-1 justify-center"
-                  title="Send keyword, topic, company, email, TFN and SEO requirements to n8n"
+                  className="px-3 py-2.5 rounded-xl border border-violet-300 bg-violet-500/10 hover:bg-violet-500/20 text-violet-700 dark:text-violet-300 text-xs font-bold transition disabled:opacity-50 flex-1 justify-center flex items-center gap-1.5"
+                  title="Trigger automated n8n workflow: saves pending request to requests table, executes n8n, and loads generated blog"
                 >
-                  Workflow
+                  <Sparkles className="w-3.5 h-3.5 text-violet-600 dark:text-violet-400" />
+                  <span>{isGeneratingBulk ? 'Triggering...' : '⚡ Run n8n Workflow'}</span>
                 </button>
               </div>
 
@@ -2138,120 +2187,42 @@ export default function App() {
                 </button>
               </div>
 
-              <div id="templates" className={`${activeSection === 'drafts' ? '' : 'hidden'} rounded-xl border p-4 ${isDarkMode ? 'border-slate-800 bg-slate-950/60' : 'border-slate-200 bg-slate-50'}`}>
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <p className="text-xs font-bold">Draft &amp; Template Manager</p>
-                    <p className="text-[11px] text-slate-500">Create and manage reusable templates and independent drafts without generating a blog first.</p>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <span className="rounded-lg bg-slate-500/10 px-2.5 py-1.5 text-[11px] font-semibold text-slate-500">{generatedPosts.filter(post => post.status === 'Draft').length} drafts · {savedTemplates.length} templates</span>
-                    <button type="button" onClick={createDraftFromScratch} className="rounded-lg border border-slate-300 px-2.5 py-1.5 text-[11px] font-semibold dark:border-slate-700"><Plus className="mr-1 inline h-3 w-3" />Create draft</button>
-                    <button type="button" onClick={saveActiveAsTemplate} disabled={!activePost} className="rounded-lg bg-sky-600 px-2.5 py-1.5 text-[11px] font-semibold text-white disabled:opacity-50">Save active template</button>
-                  </div>
-                </div>
-                <div className="mt-4 grid gap-3 lg:grid-cols-2">
-                  <div className={`rounded-xl border p-4 ${isDarkMode ? 'border-violet-900/60 bg-violet-950/20' : 'border-violet-200 bg-violet-50'}`}>
-                    <div className="flex items-center justify-between gap-2">
-                      <div><p className="text-xs font-black">Create a reusable template</p><p className="mt-1 text-[11px] text-slate-500">Build once, then use it for any selected Step 2 entries.</p></div>
-                      <FileCode className="h-5 w-5 text-violet-500" />
-                    </div>
-                    <div className="mt-3 space-y-2">
-                      <input value={templateNameInput} onChange={event => setTemplateNameInput(event.target.value)} placeholder="Template name" className={`w-full rounded-lg border p-2 text-xs ${isDarkMode ? 'border-slate-800 bg-slate-950 text-white' : 'border-slate-300 bg-white'}`} />
-                      <input value={templateTitleInput} onChange={event => setTemplateTitleInput(event.target.value)} placeholder="Default article title (optional)" className={`w-full rounded-lg border p-2 text-xs ${isDarkMode ? 'border-slate-800 bg-slate-950 text-white' : 'border-slate-300 bg-white'}`} />
-                      <input value={templateKeywordInput} onChange={event => setTemplateKeywordInput(event.target.value)} placeholder="Target keyword or topic" className={`w-full rounded-lg border p-2 text-xs ${isDarkMode ? 'border-slate-800 bg-slate-950 text-white' : 'border-slate-300 bg-white'}`} />
-                      <textarea value={templateHtmlInput} onChange={event => setTemplateHtmlInput(event.target.value)} rows={6} placeholder="Template HTML. Use {{entry}} or {{brand}} where the selected entry name should appear." className={`w-full resize-y rounded-lg border p-2 font-mono text-[11px] ${isDarkMode ? 'border-slate-800 bg-slate-950 text-white' : 'border-slate-300 bg-white'}`} />
-                      <button type="button" onClick={saveNewTemplate} className="rounded-lg bg-violet-600 px-3 py-2 text-[11px] font-bold text-white hover:bg-violet-500">Save new template</button>
-                    </div>
-                  </div>
-                  <div className={`rounded-xl border p-4 ${isDarkMode ? 'border-slate-800 bg-slate-900' : 'border-slate-200 bg-white'}`}>
-                    <div className="flex items-center justify-between gap-2">
-                      <div><p className="text-xs font-black">Create a standalone draft</p><p className="mt-1 text-[11px] text-slate-500">Start an editable draft without selecting a generated blog.</p></div>
-                      <FileCode className="h-5 w-5 text-sky-500" />
-                    </div>
-                    <input value={draftNameInput} onChange={event => setDraftNameInput(event.target.value)} placeholder="Draft name or title (optional)" className={`mt-3 w-full rounded-lg border p-2 text-xs ${isDarkMode ? 'border-slate-800 bg-slate-950 text-white' : 'border-slate-300 bg-white'}`} />
-                    <button type="button" onClick={createDraftFromScratch} className="mt-2 rounded-lg bg-sky-600 px-3 py-2 text-[11px] font-bold text-white hover:bg-sky-500">Create editable draft</button>
-                    <p className="mt-3 text-[11px] text-slate-500">After creation, select the draft below to edit its title, keyword, status, and complete HTML.</p>
-                  </div>
-                </div>
-                <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-                  <div className={`rounded-xl border p-3 ${isDarkMode ? 'border-slate-800 bg-slate-900' : 'border-slate-200 bg-white'}`}>
-                    <p className="text-[11px] font-black uppercase tracking-wide text-slate-500">Saved drafts</p>
-                    <div className="mt-2 max-h-72 space-y-2 overflow-y-auto">
-                      {generatedPosts.filter(post => post.status === 'Draft').map(draft => (
-                        <div key={draft.id} className={`rounded-lg border p-2 ${activePost?.id === draft.id ? 'border-sky-500' : 'border-slate-200 dark:border-slate-800'}`}>
-                          <button type="button" onClick={() => { const index = generatedPosts.findIndex(post => post.id === draft.id); setCurrentPostIndex(index); }} className="w-full truncate text-left text-xs font-bold">{draft.title || 'Untitled draft'}</button>
-                          <div className="mt-2 flex gap-2">
-                            <button type="button" onClick={() => loadTemplate(draft)} className="text-[10px] font-bold text-sky-600">Duplicate</button>
-                            <button type="button" onClick={() => deleteDraft(draft.id)} className="text-[10px] font-bold text-rose-500">Delete</button>
-                          </div>
-                        </div>
-                      ))}
-                      {!generatedPosts.some(post => post.status === 'Draft') && <p className="rounded-lg bg-slate-500/10 p-3 text-[11px] text-slate-500">No drafts yet. Create a new draft or generate a template from the setup step.</p>}
-                    </div>
-                  </div>
-                  <div className={`rounded-xl border p-3 ${isDarkMode ? 'border-slate-800 bg-slate-900' : 'border-slate-200 bg-white'}`}>
-                    <p className="text-[11px] font-black uppercase tracking-wide text-slate-500">Edit selected draft</p>
-                    {activePost ? <>
-                      <label className="mt-3 block text-[11px] font-semibold">Draft title<input value={activePost.title} onChange={event => updateDraftField(activePost.id, 'title', event.target.value)} className={`mt-1 w-full rounded-lg border p-2 text-xs ${isDarkMode ? 'border-slate-800 bg-slate-950 text-white' : 'border-slate-300 bg-white'}`} /></label>
-                      <label className="mt-3 block text-[11px] font-semibold">Target keyword<input value={activePost.keyword} onChange={event => updateDraftField(activePost.id, 'keyword', event.target.value)} className={`mt-1 w-full rounded-lg border p-2 text-xs ${isDarkMode ? 'border-slate-800 bg-slate-950 text-white' : 'border-slate-300 bg-white'}`} /></label>
-                      <label className="mt-3 block text-[11px] font-semibold">Workflow status
-                        <select value={activePost.status} onChange={event => updateDraftField(activePost.id, 'status', event.target.value)} className={`mt-1 w-full rounded-lg border p-2 text-xs ${isDarkMode ? 'border-slate-800 bg-slate-950 text-white' : 'border-slate-300 bg-white'}`}>
-                          <option value="Draft">Draft</option><option value="Ready">Ready</option>
-                        </select>
-                      </label>
-                      <label className="mt-3 block text-[11px] font-semibold">Full HTML content
-                        <textarea value={activePost.htmlContent} onChange={event => updateDraftField(activePost.id, 'htmlContent', event.target.value)} rows={9} className={`mt-1 w-full resize-y rounded-lg border p-2 font-mono text-[11px] leading-5 ${isDarkMode ? 'border-slate-800 bg-slate-950 text-white' : 'border-slate-300 bg-white text-slate-900'}`} placeholder="Write or paste the complete article HTML here..." />
-                      </label>
-                      <div className="mt-3 flex flex-wrap gap-2">
-                      <button type="button" onClick={() => setActiveSection('review')} className="mt-3 rounded-lg bg-emerald-600 px-3 py-2 text-[11px] font-bold text-white">Open in review editor</button>
-                        <button type="button" onClick={() => deleteDraft(activePost.id)} className="mt-3 rounded-lg border border-rose-300 px-3 py-2 text-[11px] font-bold text-rose-600"><Trash2 className="mr-1 inline h-3 w-3" />Delete draft</button>
-                      </div>
-                    </> : <p className="mt-3 text-[11px] text-slate-500">Select a draft to edit its title, keyword, content, settings, and banner.</p>}
-                  </div>
-                </div>
-                <div className="mt-3 rounded-xl border p-3 dark:border-slate-800">
-                  <p className="text-[11px] font-black uppercase tracking-wide text-slate-500">Reusable templates</p>
-                  {savedTemplates.length > 0 ? <div className="mt-2 grid gap-2 md:grid-cols-2">
-                    {savedTemplates.map(template => (
-                      <div key={template.id} className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white p-2 text-[11px] dark:border-slate-800 dark:bg-slate-900">
-                        <div className="min-w-0"><span className="block truncate font-bold">{template.templateName || template.title || 'Untitled template'}</span><span className="block truncate text-[10px] text-slate-500">{template.keyword || 'No keyword'}</span></div>
-                        <div className="flex shrink-0 gap-2">
-                          <button type="button" onClick={() => loadTemplate(template)} className="font-semibold text-sky-600 hover:underline">Use</button>
-                          <button type="button" onClick={() => setSavedTemplates(current => current.filter(item => item.id !== template.id))} className="font-semibold text-rose-500 hover:underline">Delete</button>
-                        </div>
-                      </div>
-                    ))}
-                  </div> : <p className="mt-2 rounded-lg bg-slate-500/10 p-3 text-[11px] text-slate-500">No reusable templates yet. Select any draft, edit its HTML, then choose “Save active template”.</p>}
-                </div>
-                <div className="mt-3 rounded-xl border p-3 dark:border-slate-800">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div>
-                      <p className="text-[11px] font-black uppercase tracking-wide text-slate-500">n8n / Supabase drafts</p>
-                      <p className="text-[11px] text-slate-500">Preview and reuse drafts saved by the n8n workflow in the <code>blog</code> table.</p>
-                    </div>
-                    <button type="button" onClick={() => { void refreshSupabaseDrafts(); }} className="rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold">
-                      {isLoadingSupabaseDrafts ? 'Loading...' : 'Refresh drafts'}
-                    </button>
-                  </div>
-                  {supabaseDrafts.length > 0 ? <div className="mt-2 grid gap-2 md:grid-cols-2">
-                    {supabaseDrafts.map(draft => (
-                      <div key={draft.id} className="rounded-lg border border-slate-200 bg-white p-3 text-[11px] dark:border-slate-800 dark:bg-slate-900">
-                        <p className="truncate font-bold">{draft.title}</p>
-                        <p className="mt-1 truncate text-slate-500">{draft.keyword}</p>
-                        <div className="mt-2 flex gap-3">
-                          <button type="button" onClick={() => applySourceToSelectedEntries(draft)} className="font-semibold text-sky-600 hover:underline">Use for selected</button>
-                          <button type="button" onClick={() => { setGeneratedPosts(current => [...current, { ...draft, id: `draft-${Date.now()}`, status: 'Draft' }]); setStatusMessage('Supabase draft added to the local draft manager.'); }} className="font-semibold text-emerald-600 hover:underline">Add to drafts</button>
-                        </div>
-                      </div>
-                    ))}
-                  </div> : <p className="mt-2 rounded-lg bg-slate-500/10 p-3 text-[11px] text-slate-500">No rows with article HTML were found in the <code>blog</code> table.</p>}
-                </div>
-              </div>
-
             </div>
           </div>
         </div>
+
+        {/* STEP 4: Full-Width End-to-End Drafts & Templates Manager */}
+        <section className={`${activeSection === 'drafts' ? '' : 'hidden'} w-full max-w-6xl mx-auto`}>
+          <TemplateDraftManager
+            savedTemplates={savedTemplates}
+            onSaveTemplate={(tpl) => {
+              const updated = [tpl, ...savedTemplates.filter(item => item.id !== tpl.id)];
+              setSavedTemplates(updated);
+              try {
+                localStorage.setItem('easyflight_saved_templates', JSON.stringify(updated));
+              } catch (e) {
+                console.warn('Could not save template locally:', e);
+              }
+            }}
+            onDeleteTemplate={(id) => {
+              const updated = savedTemplates.filter(item => item.id !== id);
+              setSavedTemplates(updated);
+              try {
+                localStorage.setItem('easyflight_saved_templates', JSON.stringify(updated));
+              } catch (e) {
+                console.warn('Could not save templates locally:', e);
+              }
+            }}
+            generatedPosts={generatedPosts}
+            onApplyTemplateToQueue={applySourceToSelectedEntries}
+            supabaseDrafts={supabaseDrafts}
+            onRefreshSupabaseDrafts={() => void refreshSupabaseDrafts()}
+            isLoadingSupabase={isLoadingSupabaseDrafts}
+            isDarkMode={isDarkMode}
+            selectedEntityCount={selectedAirlines.length || airlines.length}
+            entityLabel={entryLabel}
+          />
+        </section>
 
         <section className={`${activeSection === 'history' ? '' : 'hidden'} w-full max-w-6xl mx-auto rounded-2xl border p-3 sm:p-5 shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -2934,47 +2905,23 @@ export default function App() {
         </div>
       )}
 
-      {showDraftPicker && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/60 p-4" role="dialog" aria-modal="true" aria-label="Choose a draft or template">
-          <div className={`w-full max-w-lg rounded-2xl border p-5 shadow-2xl ${isDarkMode ? 'border-slate-800 bg-slate-900' : 'border-slate-200 bg-white'}`}>
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <h2 className="text-sm font-black">Choose a draft or template</h2>
-                <p className="mt-1 text-[11px] text-slate-500">The selected content will be adapted for your Step 2 entries.</p>
-              </div>
-              <button type="button" onClick={() => setShowDraftPicker(false)} className="rounded-lg border px-2 py-1 text-xs">×</button>
-            </div>
-            <div className="mt-4 max-h-64 space-y-2 overflow-y-auto">
-              {availableDraftSources.map(source => (
-                <label key={source.id} className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 ${selectedSourceId === source.id ? 'border-sky-500 bg-sky-500/10' : 'border-slate-200 dark:border-slate-800'}`}>
-                  <input type="radio" name="draft-source" checked={selectedSourceId === source.id} onChange={() => setSelectedSourceId(source.id)} className="mt-1" />
-                  <span className="min-w-0">
-                    <span className="block truncate text-xs font-bold">{source.templateName || source.title || 'Untitled draft'}</span>
-                    <span className="mt-1 block truncate text-[11px] text-slate-500">{source.keyword || 'No keyword'} · {source.isAiGenerated ? 'n8n/Supabase' : 'Local'}</span>
-                  </span>
-                </label>
-              ))}
-              {!availableDraftSources.length && (
-                <div className="rounded-xl border border-dashed border-slate-300 p-4 text-center dark:border-slate-700">
-                  <p className="text-xs font-bold">No saved drafts or templates yet</p>
-                  <p className="mt-1 text-[11px] text-slate-500">Create one from the Drafts &amp; Templates step, or refresh n8n/Supabase drafts.</p>
-                  <button type="button" onClick={() => { setShowDraftPicker(false); setActiveSection('drafts'); }} className="mt-3 rounded-lg bg-violet-600 px-3 py-2 text-[11px] font-bold text-white">Open template manager</button>
-                </div>
-              )}
-            </div>
-            {selectedSourceId && (
-              <div className="mt-3 rounded-xl border p-3 dark:border-slate-800">
-                <p className="text-[11px] font-black uppercase tracking-wide text-slate-500">Preview</p>
-                <div className="mt-2 max-h-40 overflow-y-auto rounded-lg bg-slate-500/5 p-3 text-xs" dangerouslySetInnerHTML={{ __html: availableDraftSources.find(source => source.id === selectedSourceId)?.htmlContent || '<p>No preview content available.</p>' }} />
-              </div>
-            )}
-            <div className="mt-4 flex justify-end gap-2">
-              <button type="button" onClick={() => { setShowDraftPicker(false); setActiveSection('drafts'); }} className="rounded-lg border px-3 py-2 text-[11px] font-semibold">Manage drafts</button>
-              <button type="button" onClick={generateFromSelectedSource} disabled={!selectedSourceId} className="rounded-lg bg-sky-600 px-3 py-2 text-[11px] font-bold text-white disabled:opacity-50">Generate content</button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Template Picker Modal for Step 2 */}
+      <TemplatePickerModal
+        isOpen={showTemplatePickerModal}
+        onClose={() => setShowTemplatePickerModal(false)}
+        onApplyTemplate={(tpl) => {
+          applySourceToSelectedEntries(tpl);
+        }}
+        customTemplates={savedTemplates}
+        supabaseDrafts={supabaseDrafts}
+        isDarkMode={isDarkMode}
+        selectedEntityCount={selectedAirlines.length || airlines.length}
+        entityLabel={entryLabel}
+        onOpenFullManager={() => {
+          setShowTemplatePickerModal(false);
+          setActiveSection('drafts');
+        }}
+      />
 
       {/* Airline Manager Modal */}
       <AirlineManagerModal

@@ -85,7 +85,7 @@ app.get(['/api/storage/images', '/storage/images'], async (req, res) => {
       const nestedResponse = await fetch(`${storageUrl}/storage/v1/object/list/${storageBucket}`, {
         method: 'POST',
         headers: {
-          Authorization: `******`,
+          Authorization: `Bearer ${serviceKey}`,
           apikey: serviceKey,
           'Content-Type': 'application/json'
         },
@@ -125,6 +125,139 @@ app.post(['/api/storage/upload', '/storage/upload'], async (req, res) => {
     res.json({ url: `${publicStorageUrl}/${path.split('/').map(encodeURIComponent).join('/')}` });
   } catch (error) {
     res.status(500).json({ error: error instanceof Error ? error.message : 'Image upload failed.' });
+  }
+});
+
+// n8n Workflow Integration: Creates one pending row in Supabase requests table & notifies n8n
+app.post(['/api/workflow/trigger', '/workflow/trigger'], async (req, res) => {
+  const serviceKey = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+  if (!serviceKey) return res.status(503).json({ error: 'Supabase credentials are not configured in Vercel.' });
+  
+  const { id, blog_type, company_name, company_email, company_website, keyword, topic, tfn, tfn_number, airline_name, city, country, payload } = req.body || {};
+  const requestId = id || `req-${Date.now()}`;
+  const record = {
+    id: requestId,
+    company_name: String(company_name || '').trim(),
+    company_email: String(company_email || '').trim(),
+    company_website: String(company_website || '').trim(),
+    blog_type: String(blog_type || 'airlines').trim(),
+    keyword: String(keyword || topic || '').trim(),
+    topic: String(topic || keyword || '').trim(),
+    tfn: String(tfn || tfn_number || '+1 (888) 794-3464').trim(),
+    tfn_number: String(tfn_number || tfn || '+1 (888) 794-3464').trim(),
+    airline_name: String(airline_name || company_name || 'Airline').trim(),
+    city: String(city || 'Headquarters').trim(),
+    country: String(country || 'United States').trim(),
+    status: 'pending',
+    payload: payload || {}
+  };
+
+  try {
+    // 1. Clear previous rows to avoid n8n confusion
+    await fetch(`${storageUrl}/rest/v1/requests?id=neq.placeholder`, {
+      method: 'DELETE',
+      headers: {
+        Authorization: `Bearer ${serviceKey}`,
+        apikey: serviceKey,
+        'Content-Type': 'application/json'
+      }
+    }).catch(() => {});
+
+    await fetch(`${storageUrl}/rest/v1/user_blog_requests?id=neq.placeholder`, {
+      method: 'DELETE',
+      headers: {
+        Authorization: `Bearer ${serviceKey}`,
+        apikey: serviceKey,
+        'Content-Type': 'application/json'
+      }
+    }).catch(() => {});
+
+    // 2. Insert single pending row into requests
+    const insertRes = await fetch(`${storageUrl}/rest/v1/requests`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${serviceKey}`,
+        apikey: serviceKey,
+        'Content-Type': 'application/json',
+        Prefer: 'return=representation'
+      },
+      body: JSON.stringify(record)
+    });
+
+    const insertData = await insertRes.json().catch(() => ({}));
+    if (!insertRes.ok) {
+      return res.status(insertRes.status).json({ error: insertData?.message || 'Failed to insert request into Supabase requests table.' });
+    }
+
+    // Also insert into user_blog_requests if present
+    fetch(`${storageUrl}/rest/v1/user_blog_requests`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${serviceKey}`,
+        apikey: serviceKey,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(record)
+    }).catch(() => {});
+
+    // 3. Ping n8n webhook and MCP server endpoint
+    const n8nWebhook = 'https://automated-blogger.app.n8n.cloud/webhook/seo-blog-generator';
+    const n8nMcp = 'https://automated-blogger.app.n8n.cloud/mcp-server/http';
+    fetch(n8nWebhook, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event: 'new_request', record })
+    }).catch(() => {});
+
+    fetch(n8nMcp, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', method: 'notify_request', params: record, id: requestId })
+    }).catch(() => {});
+
+    res.json({ success: true, requestId, record });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Workflow trigger failed' });
+  }
+});
+
+app.get(['/api/workflow/status', '/workflow/status'], async (req, res) => {
+  const serviceKey = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+  if (!serviceKey) return res.status(503).json({ error: 'Supabase credentials are not configured.' });
+  const requestId = String(req.query.requestId || '');
+
+  try {
+    const url = requestId 
+      ? `${storageUrl}/rest/v1/blogs?request_id=eq.${encodeURIComponent(requestId)}&order=created_at.desc&limit=5`
+      : `${storageUrl}/rest/v1/blogs?order=created_at.desc&limit=5`;
+    const response = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${serviceKey}`,
+        apikey: serviceKey
+      }
+    });
+    const blogs = await response.json().catch(() => []);
+    res.json({ success: true, blogs: Array.isArray(blogs) ? blogs : [] });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Workflow status check failed' });
+  }
+});
+
+app.get(['/api/workflow/drafts', '/workflow/drafts'], async (req, res) => {
+  const serviceKey = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+  if (!serviceKey) return res.status(503).json({ error: 'Supabase credentials are not configured.' });
+
+  try {
+    const response = await fetch(`${storageUrl}/rest/v1/blogs?order=created_at.desc&limit=50`, {
+      headers: {
+        Authorization: `Bearer ${serviceKey}`,
+        apikey: serviceKey
+      }
+    });
+    const blogs = await response.json().catch(() => []);
+    res.json({ success: true, drafts: Array.isArray(blogs) ? blogs : [] });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Drafts listing failed' });
   }
 });
 
@@ -341,7 +474,7 @@ app.post(['/api/blogger/publish', '/blogger/publish'], async (req, res) => {
     return res.status(401).json({ error: 'Unauthorized. Invalid or missing PUBLISH_SECRET.' });
   }
 
-  const { title, content, labels, isDraft, refreshToken } = req.body;
+  const { title, content, labels, isDraft, refreshToken, customMetaData, location, readerComments } = req.body;
   const blogId = req.body.blogId || process.env.BLOGGER_BLOG_ID;
 
   if (!blogId || !title || !content) {
@@ -361,6 +494,9 @@ app.post(['/api/blogger/publish', '/blogger/publish'], async (req, res) => {
     const url = `https://www.googleapis.com/blogger/v3/blogs/${encodeURIComponent(blogId)}/posts${isDraft ? '?isDraft=true' : ''}`;
     const payload: any = { title, content };
     if (labels?.length) payload.labels = labels;
+    if (customMetaData) payload.customMetaData = String(customMetaData).trim();
+    if (location) payload.location = location;
+    if (readerComments) payload.readerComments = readerComments;
 
     const r = await fetch(url, {
       method: 'POST',
