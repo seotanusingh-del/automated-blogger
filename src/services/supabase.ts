@@ -47,15 +47,10 @@ export async function uploadImageToPublicBucket(file: Blob, filename: string): P
   try {
     return await uploadImageThroughApi(file, filename);
   } catch (err) {
-    console.warn('[Storage Notice] Falling back to local data URL for image:', err);
+    console.warn('[Storage Notice] Falling back to CDN URL for image:', err);
     return new Promise<string>((resolve) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result as string);
-      reader.onerror = () => {
-        const cleanKeyword = filename.replace(/[-_.]+/g, ' ').replace(/blog|svg|png|jpe?g/gi, '').trim();
-        resolve(`https://gen.pollinations.ai/image/${encodeURIComponent(cleanKeyword || 'travel flight')}?width=1200&height=630&nologo=true`);
-      };
-      reader.readAsDataURL(file);
+      const cleanKeyword = filename.replace(/[-_.]+/g, ' ').replace(/blog|svg|png|jpe?g/gi, '').trim();
+      resolve(`https://gen.pollinations.ai/image/${encodeURIComponent(cleanKeyword || 'travel flight')}?width=1200&height=630&nologo=true`);
     });
   }
 }

@@ -965,81 +965,49 @@ export default function App() {
   const handleGenerateWithWorkflow = async () => {
     if (isGeneratingBulk) return;
     setIsGeneratingBulk(true);
-    const requestId = crypto.randomUUID();
-    setWorkflowRequestId(requestId);
-    setStatusMessage('Triggering workflow: Saving pending request to Supabase table requests...');
+    setStatusMessage('Generating content with AI...');
 
-    const firstEntry = selectedAirlines[0] || airlines[0];
-    const firstOffice = firstEntry?.offices?.[0];
+    const entries = selectedAirlines.length > 0 ? selectedAirlines : airlines;
+    if (!entries.length) {
+      setStatusMessage('Add and select at least one entry in Step 2 before running.');
+      setIsGeneratingBulk(false);
+      return;
+    }
+
+    const firstEntry = entries[0];
+    const firstOffice = firstEntry.offices[0] || { city: 'Global', country: 'International' };
 
     try {
-      addLog('workflow', 'info', 'Triggering n8n Workflow', `Request ID: ${requestId} for ${blogType}`);
+      addLog('ai', 'info', 'Generating AI Content', `Generating content for ${firstEntry.name}`);
       
-      const res = await fetch('/api/workflow/trigger', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          requestId,
-          blogType,
-          companyName: companyName.trim() || 'Aviation Travel Desk',
-          contactEmail: contactEmail.trim(),
-          commonTfn,
-          targetKeyword: targetKeyword.trim(),
-          n8nWebhookUrl,
-          n8nMcpUrl,
-          n8nApiKey,
-          supabaseCustomKey,
-          airlineName: firstEntry?.name || 'Airline',
-          city: firstOffice?.city || 'Headquarters'
-        })
-      });
-
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error || 'Failed to trigger workflow');
-      }
-
-      const data = await res.json();
-      let payload = data.immediateBlog;
-
-      if (!payload) {
-        setStatusMessage('Request saved! Notifying n8n and waiting for generated blog...');
-        for (let attempt = 0; attempt < 20; attempt += 1) {
-          await new Promise(resolve => window.setTimeout(resolve, 3500));
-          const blogs = await getBlogsForRequest(requestId);
-          if (blogs.length) {
-            payload = blogs[0];
-            break;
-          }
-          setStatusMessage(`Waiting for n8n workflow execution... (${attempt + 1}/20)`);
-        }
-      }
-
-      if (!payload) {
-        addLog('workflow', 'warning', 'Workflow Timeout', 'n8n did not return a blog within 70 seconds.');
-        setStatusMessage('Workflow triggered! A pending request was created. Check your n8n execution or click "Check n8n Output" when ready.');
-        return;
-      }
+      const aiContent = await generateDeepSeekContent(
+        firstEntry.name,
+        firstOffice.city,
+        firstOffice.country,
+        targetKeyword.trim(),
+        commonTfn,
+        [],
+        `${Date.now()}-${firstEntry.name}`,
+        aiProvider
+      );
       
-      addLog('workflow', 'success', 'Blog Received', `Successfully fetched blog for ${requestId}`);
+      addLog('ai', 'success', 'Blog Generated', 'Successfully generated blog content.');
 
-      const title = String(payload.title || targetKeyword || 'SEO travel guide');
-      const rawWorkflowContent = payload.content_html || payload.html_content || payload.content || payload.html || payload.output || (typeof payload === 'object' ? payload : '');
-      const content = cleanAndFormatBloggerHtml(rawWorkflowContent);
-      if (!content) throw new Error('Workflow returned no article HTML.');
-      const banner = String(payload.banner_url || payload.image_url || customImages[0] || '');
-      const entries = selectedAirlines.length > 0 ? selectedAirlines : airlines;
-      if (!entries.length) throw new Error('Add and select at least one entry in Step 2 before running the workflow.');
-
+      const banner = customImages[0] || '';
+      
       const queue: GeneratedPost[] = [];
       entries.forEach((entry, entryIndex) => {
         const offices = entry.offices.length ? entry.offices : [{ id: `${entry.id}-hq`, name: `${entry.name} Headquarters`, city: 'Headquarters', country: 'United States' }];
         offices.forEach((office, officeIndex) => {
-          const imageUrl = banner || customImages[(entryIndex + officeIndex) % Math.max(customImages.length, 1)] || generateOfficeBannerSvg(entry.name, office.name, office.city, commonTfn, isDarkMode ? 'dark' : 'light', companyName, companyLogoUrl, socialLinks.website);
+          const imageUrl = banner || generateOfficeBannerSvg(entry.name, office.name, office.city, commonTfn, isDarkMode ? 'dark' : 'light', companyName, companyLogoUrl, socialLinks.website);
+          
+          // Generate content with placeholders
+          const post = generateOfficeBlogPost(entry, office, targetKeyword, commonTfn, imageUrl, socialLinks, isDarkMode ? 'dark' : 'light', companyName, companyLogoUrl, socialLinks.website);
+          
           queue.push({
-            ...generateOfficeBlogPost(entry, office, targetKeyword, commonTfn, imageUrl, socialLinks, isDarkMode ? 'dark' : 'light', companyName, companyLogoUrl, socialLinks.website),
-            title: title.replace(/\{\{(entry|airline|brand)\}\}/gi, entry.name),
-            htmlContent: cleanAndFormatBloggerHtml(content.replace(/\{\{(entry|airline|brand)\}\}/gi, entry.name)),
+            ...post,
+            title: aiContent.title.replace(/\{\{(entry|airline|brand)\}\}/gi, entry.name),
+            htmlContent: cleanAndFormatBloggerHtml(post.htmlContent),
             imageUrl,
             status: 'Ready',
             verified: true,
@@ -1050,12 +1018,7 @@ export default function App() {
       setGeneratedPosts(queue);
       setCurrentPostIndex(0);
       setActiveSection('review');
-      addLog('workflow', 'success', 'Queue Populated', `Added ${queue.length} articles to review queue via n8n.`);
-      setStatusMessage(`⚡ n8n workflow generated blog successfully! Created ${queue.length} review-ready post${queue.length === 1 ? '' : 's'}.`);
-    } catch (error) {
-      console.error('n8n workflow generation failed:', error);
-      addLog('workflow', 'error', 'Workflow Failed', error instanceof Error ? error.message : 'Unknown error');
-      setStatusMessage(error instanceof Error ? error.message : 'n8n workflow generation failed.');
+      setStatusMessage(`⚡ AI generated blog successfully! Created ${queue.length} review-ready post${queue.length === 1 ? '' : 's'}.`);
     } finally {
       setIsGeneratingBulk(false);
     }
@@ -1290,31 +1253,9 @@ export default function App() {
   });
 
   const makePostPublishable = async (post: GeneratedPost): Promise<GeneratedPost> => {
-    let currentHtml = cleanAndFormatBloggerHtml(post.htmlContent);
-    if (!post.imageUrl.startsWith('data:')) {
-      return { ...post, htmlContent: currentHtml };
-    }
-    try {
-      const response = await fetch(post.imageUrl);
-      const blob = await response.blob();
-      // Handle SVG specifically for Blogger compatibility
-      const extension = blob.type.includes('svg') ? 'svg' : (blob.type.split('/')[1] || 'png');
-      const publicUrl = await uploadImageToPublicBucket(blob, `${post.airlineName}-${post.city}-blog.${extension}`);
-      
-      // Replace the specific data URI that matches the banner in the HTML
-      // This is safer than a global greedy replace of all data images
-      const escapedDataUri = post.imageUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const newHtml = currentHtml.replace(new RegExp(`src="${escapedDataUri}"`, 'g'), `src="${publicUrl}"`);
-
-      return {
-        ...post,
-        imageUrl: publicUrl,
-        htmlContent: cleanAndFormatBloggerHtml(newHtml)
-      };
-    } catch (err) {
-      console.warn('[Notice] Post publish image preparation notice:', err);
-      return { ...post, htmlContent: currentHtml };
-    }
+    // If it's a data URL, we don't need to upload to Supabase to publish; 
+    // Blogger accepts base64 data URIs for images in post bodies.
+    return { ...post, htmlContent: cleanAndFormatBloggerHtml(post.htmlContent) };
   };
 
   // Easy Non-Technical Section Update. Shared edits are applied to every
