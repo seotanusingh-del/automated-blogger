@@ -374,20 +374,18 @@ export function buildHtmlFromSections(
 
   return cleanAndFormatBloggerHtml(`
 <style>
-  article { line-height: 1.6; color: #333; max-width: 800px; margin: 0 auto; }
+  article { line-height: 1.6; max-width: 800px; margin: 0 auto; }
   h1 { font-size: 2em; margin-bottom: 0.5em; }
-  h2 { font-size: 1.5em; margin-top: 1.5em; margin-bottom: 0.5em; color: #222; }
+  h2 { font-size: 1.5em; margin-top: 1.5em; margin-bottom: 0.5em; }
   img { max-width: 100%; height: auto; border-radius: 8px; margin: 1em 0; }
-  .toc { background: #f4f4f4; padding: 1em; border-radius: 8px; margin: 1em 0; }
-  .priority-support { background: #0056b3; color: white; padding: 1.5em; border-radius: 8px; text-align: center; margin: 1em 0; }
+  .toc { padding: 1em; border-radius: 8px; margin: 1em 0; border: 1px solid; }
+  .priority-support { padding: 1.5em; border-radius: 8px; text-align: center; margin: 1em 0; border: 1px solid; }
   .support-header { font-weight: bold; font-size: 1.2em; margin-bottom: 0.5em; }
-  .support-cta a { color: white; font-weight: bold; text-decoration: underline; }
   table { width: 100%; border-collapse: collapse; margin: 1em 0; }
-  th, td { border: 1px solid #ddd; padding: 0.5em; text-align: left; }
-  th { background: #f4f4f4; }
-  .disclaimer { font-size: 0.9em; color: #666; margin-top: 2em; border-top: 1px solid #eee; padding-top: 1em; }
+  th, td { border: 1px solid; padding: 0.5em; text-align: left; }
+  .disclaimer { font-size: 0.9em; margin-top: 2em; border-top: 1px solid; padding-top: 1em; }
   .social-links .links-grid { display: flex; flex-wrap: wrap; gap: 0.5em; justify-content: center; margin-top: 0.5em; }
-  .social-links a { display: inline-block; padding: 0.5em 1em; background: #eee; color: #334; text-decoration: none; border-radius: 4px; font-size: 0.9em; }
+  .social-links a { display: inline-block; padding: 0.5em 1em; text-decoration: none; border-radius: 4px; font-size: 0.9em; border: 1px solid; }
 </style>
 <article>
 <h1>${escapeXml(title)}</h1>
