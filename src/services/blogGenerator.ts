@@ -212,17 +212,13 @@ export function buildHtmlFromSections(
   bloggerSettings?: BloggerSubSettings,
   companyName = ''
 ): string {
+  const siteUrl = socialLinks?.website || 'https://easyflightconnectblog.blogspot.com';
   const cleanTfn = tfnNumber.trim() || '+1 (888) 794-3464';
   const publisherName = companyName.trim() || 'EasyFlightConnect';
   const telLink = cleanTfn.replace(/[^0-9+]/g, '');
   const permalinkSlug = bloggerSettings?.permalinkSlug || `${airlineName.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${city.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-office`;
-  const canonicalUrl = `https://easyflightconnectblog.blogspot.com/2026/10/${permalinkSlug}.html`;
+  const canonicalUrl = `${siteUrl}/2026/10/${permalinkSlug}.html`;
   const searchDesc = bloggerSettings?.searchDescription || `Complete ${airlineName} ${city} office guide. Dispute process, flight reservations, baggage compensation & 24/7 hotline ${cleanTfn}.`;
-
-  // Robots & SEO meta tags
-  const robotsDirectives = bloggerSettings?.customRobotTags
-    ? `${bloggerSettings.customRobotTags.index ? 'index' : 'noindex'}, ${bloggerSettings.customRobotTags.follow ? 'follow' : 'nofollow'}${bloggerSettings.customRobotTags.maxSnippet ? ', max-snippet:-1' : ''}${bloggerSettings.customRobotTags.maxImagePreview ? ', max-image-preview:large' : ''}${bloggerSettings.customRobotTags.noarchive ? ', noarchive' : ''}`
-    : 'index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1';
 
   // Authority & Redirect Badges
   let linksHtml = '';
@@ -231,10 +227,10 @@ export function buildHtmlFromSections(
 
     // Official & Authority redirect links
     if (socialLinks.website && socialLinks.website.trim()) {
-      badges.push(`<a href="${socialLinks.website}" target="_blank" rel="noopener" style="display:inline-block;margin:4px 6px;padding:8px 16px;background:#0f172a;color:#ffffff;text-decoration:none;border-radius:20px;font-size:12px;font-weight:bold;">🌐 Official Website</a>`);
+      badges.push(`<a href="${socialLinks.website}" target="_blank" rel="noopener">🌐 Official Website</a>`);
     }
     if (socialLinks.supportUrl && socialLinks.supportUrl.trim()) {
-      badges.push(`<a href="${socialLinks.supportUrl}" target="_blank" rel="noopener" style="display:inline-block;margin:4px 6px;padding:8px 16px;background:#0284c7;color:#ffffff;text-decoration:none;border-radius:20px;font-size:12px;font-weight:bold;">🛟 Help &amp; Support Portal</a>`);
+      badges.push(`<a href="${socialLinks.supportUrl}" target="_blank" rel="noopener">🛟 Help &amp; Support Portal</a>`);
     }
     const region = country.toLowerCase();
     const complaintPortal = region.includes('canada')
@@ -242,48 +238,45 @@ export function buildHtmlFromSections(
       : region.includes('united kingdom') || region.includes('uk') || region.includes('england')
         ? ['https://www.caa.co.uk/passengers/resolving-your-flight-problem/', '🇬🇧 UK CAA Passenger Guidance']
         : ['https://www.transportation.gov/airconsumer/file-consumer-complaint', '🇺🇸 US DOT Consumer Complaint Portal'];
-    badges.push(`<a href="${complaintPortal[0]}" target="_blank" rel="noopener" style="display:inline-block;margin:4px 6px;padding:8px 16px;background:#1e3a8a;color:#ffffff;text-decoration:none;border-radius:20px;font-size:12px;font-weight:bold;">⚖️ ${complaintPortal[1]}</a>`);
-    const companySite = socialLinks.website?.trim();
-    if (companySite) badges.push(`<a href="${companySite}" target="_blank" rel="noopener" style="display:inline-block;margin:4px 6px;padding:8px 16px;background:#0369a1;color:#ffffff;text-decoration:none;border-radius:20px;font-size:12px;font-weight:bold;">🌐 ${escapeXml(companyName || 'Company Website')}</a>`);
-
-    if (socialLinks.whatsapp && socialLinks.whatsapp.trim()) {
-      badges.push(`<a href="${socialLinks.whatsapp}" target="_blank" rel="noopener" style="display:inline-block;margin:4px 6px;padding:8px 16px;background:#25d366;color:#ffffff;text-decoration:none;border-radius:20px;font-size:12px;font-weight:bold;">💬 WhatsApp Chat</a>`);
-    }
+    badges.push(`<a href="${complaintPortal[0]}" target="_blank" rel="noopener">⚖️ ${complaintPortal[1]}</a>`);
 
     // Social Media Platforms
+    if (socialLinks.whatsapp && socialLinks.whatsapp.trim()) {
+      badges.push(`<a href="${socialLinks.whatsapp}" target="_blank" rel="noopener">💬 WhatsApp Chat</a>`);
+    }
     if (socialLinks.facebook && socialLinks.facebook.trim()) {
-      badges.push(`<a href="${socialLinks.facebook}" target="_blank" rel="noopener" style="display:inline-block;margin:4px 6px;padding:8px 16px;background:#1877f2;color:#ffffff;text-decoration:none;border-radius:20px;font-size:12px;font-weight:bold;">Facebook</a>`);
+      badges.push(`<a href="${socialLinks.facebook}" target="_blank" rel="noopener">Facebook</a>`);
     }
     if (socialLinks.twitter && socialLinks.twitter.trim()) {
-      badges.push(`<a href="${socialLinks.twitter}" target="_blank" rel="noopener" style="display:inline-block;margin:4px 6px;padding:8px 16px;background:#000000;color:#ffffff;text-decoration:none;border-radius:20px;font-size:12px;font-weight:bold;">X (Twitter)</a>`);
+      badges.push(`<a href="${socialLinks.twitter}" target="_blank" rel="noopener">X (Twitter)</a>`);
     }
     if (socialLinks.instagram && socialLinks.instagram.trim()) {
-      badges.push(`<a href="${socialLinks.instagram}" target="_blank" rel="noopener" style="display:inline-block;margin:4px 6px;padding:8px 16px;background:#e4405f;color:#ffffff;text-decoration:none;border-radius:20px;font-size:12px;font-weight:bold;">Instagram</a>`);
+      badges.push(`<a href="${socialLinks.instagram}" target="_blank" rel="noopener">Instagram</a>`);
     }
     if (socialLinks.linkedin && socialLinks.linkedin.trim()) {
-      badges.push(`<a href="${socialLinks.linkedin}" target="_blank" rel="noopener" style="display:inline-block;margin:4px 6px;padding:8px 16px;background:#0077b5;color:#ffffff;text-decoration:none;border-radius:20px;font-size:12px;font-weight:bold;">LinkedIn</a>`);
+      badges.push(`<a href="${socialLinks.linkedin}" target="_blank" rel="noopener">LinkedIn</a>`);
     }
     if (socialLinks.youtube && socialLinks.youtube.trim()) {
-      badges.push(`<a href="${socialLinks.youtube}" target="_blank" rel="noopener" style="display:inline-block;margin:4px 6px;padding:8px 16px;background:#ff0000;color:#ffffff;text-decoration:none;border-radius:20px;font-size:12px;font-weight:bold;">YouTube</a>`);
+      badges.push(`<a href="${socialLinks.youtube}" target="_blank" rel="noopener">YouTube</a>`);
     }
 
     // Custom user links
     if (socialLinks.customLinks && Array.isArray(socialLinks.customLinks)) {
       socialLinks.customLinks.forEach((c) => {
         if (c.url && c.url.trim()) {
-          badges.push(`<a href="${c.url}" target="_blank" rel="noopener" style="display:inline-block;margin:4px 6px;padding:8px 16px;background:#475569;color:#ffffff;text-decoration:none;border-radius:20px;font-size:12px;font-weight:bold;">🔗 ${escapeXml(c.label || 'Link')}</a>`);
+          badges.push(`<a href="${c.url}" target="_blank" rel="noopener">🔗 ${escapeXml(c.label || 'Link')}</a>`);
         }
       });
     }
 
     if (badges.length > 0) {
       linksHtml = `
-<div id="resources" style="background:#f8fafc;padding:18px 20px;border-radius:10px;margin:24px 0;border:1px solid #e2e8f0;text-align:center;">
-  <strong style="color:#0f172a;display:block;margin-bottom:10px;font-size:14px;">Official Portals, Authority Links &amp; Verified Resources:</strong>
-  <div style="line-height:2.4;">
+<nav id="resources" class="social-links">
+  <strong>Official Portals, Authority Links &amp; Verified Resources:</strong>
+  <div class="links-grid">
     ${badges.join(' ')}
   </div>
-</div>`;
+</nav>`;
     }
   }
 
@@ -380,111 +373,116 @@ export function buildHtmlFromSections(
   };
 
   return cleanAndFormatBloggerHtml(`
-<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 16px; line-height: 1.7; color: #334155; max-width: 820px; margin: 0 auto; padding: 4px;">
-<h1 style="font-size: 28px; font-weight: 800; color: #0f172a; line-height: 1.3; margin: 0 0 16px 0;">${escapeXml(title)}</h1>
-${companyName.trim() ? `<p style="font-size:13px;color:#475569;font-weight:700;margin:0 0 16px 0;">Published by ${escapeXml(companyName.trim())}</p>` : ''}
-<img src="${bannerImg}" alt="${escapeXml(airlineName)} ${escapeXml(officeTitle)} Customer Support and Flight Desk" style="max-width:100%;height:auto;border-radius:12px;margin:16px 0 24px 0;box-shadow:0 6px 18px rgba(0,0,0,0.12);display:block;" />
-<p style="font-size:16px;line-height:1.75;margin:0 0 20px 0;color:#334155;">Facing a problem with an ${escapeXml(airlineName)} booking, flight schedule, baggage, payment, or customer service? Understanding the dispute process can help passengers explain their concerns and request a fair review. Whether the issue involves a reservation, a flight disruption, or a service concern, keeping accurate travel records is an important first step.</p>
+<style>
+  article { line-height: 1.6; color: #333; max-width: 800px; margin: 0 auto; }
+  h1 { font-size: 2em; margin-bottom: 0.5em; }
+  h2 { font-size: 1.5em; margin-top: 1.5em; margin-bottom: 0.5em; color: #222; }
+  img { max-width: 100%; height: auto; border-radius: 8px; margin: 1em 0; }
+  .toc { background: #f4f4f4; padding: 1em; border-radius: 8px; margin: 1em 0; }
+  .priority-support { background: #0056b3; color: white; padding: 1.5em; border-radius: 8px; text-align: center; margin: 1em 0; }
+  .support-header { font-weight: bold; font-size: 1.2em; margin-bottom: 0.5em; }
+  .support-cta a { color: white; font-weight: bold; text-decoration: underline; }
+  table { width: 100%; border-collapse: collapse; margin: 1em 0; }
+  th, td { border: 1px solid #ddd; padding: 0.5em; text-align: left; }
+  th { background: #f4f4f4; }
+  .disclaimer { font-size: 0.9em; color: #666; margin-top: 2em; border-top: 1px solid #eee; padding-top: 1em; }
+  .social-links .links-grid { display: flex; flex-wrap: wrap; gap: 0.5em; justify-content: center; margin-top: 0.5em; }
+  .social-links a { display: inline-block; padding: 0.5em 1em; background: #eee; color: #334; text-decoration: none; border-radius: 4px; font-size: 0.9em; }
+</style>
+<article>
+<h1>${escapeXml(title)}</h1>
+${companyName.trim() ? `<p class="published-by">Published by ${escapeXml(companyName.trim())}</p>` : ''}
+<img src="${bannerImg}" alt="${escapeXml(airlineName)} ${escapeXml(officeTitle)} Customer Support and Flight Desk" />
+<p>Facing a problem with an ${escapeXml(airlineName)} booking, flight schedule, baggage, payment, or customer service? Understanding the dispute process can help passengers explain their concerns and request a fair review. Whether the issue involves a reservation, a flight disruption, or a service concern, keeping accurate travel records is an important first step.</p>
 
-<!-- Table of Contents / Anchor Redirects -->
-<div style="background:#f1f5f9;border-left:4px solid #0284c7;padding:14px 18px;border-radius:6px;margin:20px 0;font-size:14px;">
-  <strong style="color:#0f172a;display:block;margin-bottom:8px;">Table of Contents (Jump to Section):</strong>
-  <ul style="margin:0;padding-left:20px;line-height:1.8;color:#0284c7;">
-    <li><a href="#overview" style="color:#0284c7;text-decoration:none;font-weight:600;">1. Overview &amp; Key Contacts</a></li>
-    <li><a href="#dispute-steps" style="color:#0284c7;text-decoration:none;font-weight:600;">2. Step-by-Step Dispute &amp; Complaint Process</a></li>
-    <li><a href="#directory" style="color:#0284c7;text-decoration:none;font-weight:600;">3. Office Details &amp; Contact Directory</a></li>
-    <li><a href="#compensation" style="color:#0284c7;text-decoration:none;font-weight:600;">4. Passenger Compensation &amp; Refund Rights</a></li>
-    <li><a href="#services" style="color:#0284c7;text-decoration:none;font-weight:600;">5. Services &amp; Ticketing Assistance</a></li>
-    <li><a href="#faq" style="color:#0284c7;text-decoration:none;font-weight:600;">6. Frequently Asked Questions (FAQ)</a></li>
-    <li><a href="#resources" style="color:#0284c7;text-decoration:none;font-weight:600;">7. Official Portals &amp; Social Links</a></li>
+<nav class="toc">
+  <strong>Table of Contents (Jump to Section):</strong>
+  <ul>
+    <li><a href="#overview">1. Overview &amp; Key Contacts</a></li>
+    <li><a href="#dispute-steps">2. Step-by-Step Dispute &amp; Complaint Process</a></li>
+    <li><a href="#directory">3. Office Details &amp; Contact Directory</a></li>
+    <li><a href="#compensation">4. Passenger Compensation &amp; Refund Rights</a></li>
+    <li><a href="#services">5. Services &amp; Ticketing Assistance</a></li>
+    <li><a href="#faq">6. Frequently Asked Questions (FAQ)</a></li>
+    <li><a href="#resources">7. Official Portals &amp; Social Links</a></li>
   </ul>
-</div>
+</nav>
 
-<div style="background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%); color: #ffffff; padding: 22px 26px; border-radius: 12px; margin: 24px 0; box-shadow: 0 4px 16px rgba(2,132,199,0.3); border-left: 6px solid #ff9500;">
-  <div style="font-size: 13px; text-transform: uppercase; letter-spacing: 1.2px; color: #ffeb3b; font-weight: bold; margin-bottom: 6px;">
-    ✈️ 24/7 Independent Passenger Assistance Desk
-  </div>
-  <p style="margin: 0 0 14px 0; font-size: 15px; line-height: 1.5; color: #ffffff;">
-    Need immediate live assistance with ${escapeXml(airlineName)} reservations, ticket rebooking, name corrections, flight cancellations, or passenger terminal guidance? Connect with an independent travel support specialist:
-  </p>
-  <div style="text-align: center; margin-top: 12px;">
-    <a href="tel:${telLink}" style="display: inline-block; background: #e11d48; color: #ffffff; padding: 14px 28px; font-size: 18px; font-weight: bold; text-decoration: none; border-radius: 50px; box-shadow: 0 4px 12px rgba(225,29,72,0.4); border: 2px solid #ffffff;">
-      📞 Call 24/7 Support: ${cleanTfn}
-    </a>
+<div class="priority-support">
+  <div class="support-header">✈️ 24/7 Independent Passenger Assistance Desk</div>
+  <p>Need immediate live assistance with ${escapeXml(airlineName)} reservations, ticket rebooking, name corrections, flight cancellations, or passenger terminal guidance? Connect with an independent travel support specialist:</p>
+  <div class="support-cta">
+    <a href="tel:${telLink}">📞 Call 24/7 Support: ${cleanTfn}</a>
   </div>
 </div>
 
-<h2 id="overview" style="color:#0f172a;font-size:22px;margin-top:28px;">Overview of the ${escapeXml(airlineName)} ${escapeXml(city)} Office</h2>
-<p style="font-size:15px;line-height:1.7;color:#334155;margin-bottom:14px;">${escapeXml(sections.overviewPara1)}</p>
-<p style="font-size:15px;line-height:1.7;color:#334155;margin-bottom:14px;">${escapeXml(sections.overviewPara2)}</p>
+<h2 id="overview">Overview of the ${escapeXml(airlineName)} ${escapeXml(city)} Office</h2>
+<p>${escapeXml(sections.overviewPara1)}</p>
+<p>${escapeXml(sections.overviewPara2)}</p>
 
-<h2 id="dispute-steps" style="color:#0f172a;font-size:22px;margin-top:28px;">Step-by-Step ${escapeXml(airlineName)} Dispute &amp; Complaint Process</h2>
-<p style="font-size:15px;line-height:1.7;color:#334155;">Passengers encountering flight disruptions, delayed baggage, or billing disputes with <strong>${escapeXml(airlineName)}</strong> should follow this proven protocol to expedite settlement:</p>
+<h2 id="dispute-steps">Step-by-Step ${escapeXml(airlineName)} Dispute &amp; Complaint Process</h2>
+<p>Passengers encountering flight disruptions, delayed baggage, or billing disputes with <strong>${escapeXml(airlineName)}</strong> should follow this proven protocol to expedite settlement:</p>
 ${disputeStepsHtml}
 
-<h2 id="directory" style="color:#0f172a;font-size:22px;margin-top:28px;">${escapeXml(airlineName)} ${escapeXml(city)} Office Details &amp; Directory</h2>
-<table style="width:100%; border-collapse:collapse; margin:22px 0; font-size:14px; text-align:left; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
+<h2 id="directory">${escapeXml(airlineName)} ${escapeXml(city)} Office Details &amp; Directory</h2>
+<table>
   <thead>
-    <tr style="background:#0284c7; color:#ffffff;">
-      <th style="padding:12px 14px; border:1px solid #cbd5e1; width:30%;">Key Service Detail</th>
-      <th style="padding:12px 14px; border:1px solid #cbd5e1;">Official Information</th>
+    <tr>
+      <th>Key Service Detail</th>
+      <th>Official Information</th>
     </tr>
   </thead>
   <tbody>
     <tr>
-      <td style="padding:11px 14px; border:1px solid #e2e8f0; font-weight:bold; background:#f8fafc;">Airline Name</td>
-      <td style="padding:11px 14px; border:1px solid #e2e8f0;">${escapeXml(airlineName)}</td>
-    </tr>
-    <tr style="background:#ffffff;">
-      <td style="padding:11px 14px; border:1px solid #e2e8f0; font-weight:bold; background:#f8fafc;">Office Location</td>
-      <td style="padding:11px 14px; border:1px solid #e2e8f0;">${escapeXml(officeTitle)}</td>
+      <td>Airline Name</td>
+      <td>${escapeXml(airlineName)}</td>
     </tr>
     <tr>
-      <td style="padding:11px 14px; border:1px solid #e2e8f0; font-weight:bold; background:#f8fafc;">City &amp; Country</td>
-      <td style="padding:11px 14px; border:1px solid #e2e8f0;">${escapeXml(city)}, ${escapeXml(country)}</td>
-    </tr>
-    <tr style="background:#ffffff;">
-      <td style="padding:11px 14px; border:1px solid #e2e8f0; font-weight:bold; background:#f8fafc;">Direct Helpline</td>
-      <td style="padding:11px 14px; border:1px solid #e2e8f0;">
-        <a href="tel:${telLink}" style="color:#0284c7; font-weight:bold; text-decoration:none;">${cleanTfn}</a> (Toll-Free 24/7)
-      </td>
+      <td>Office Location</td>
+      <td>${escapeXml(officeTitle)}</td>
     </tr>
     <tr>
-      <td style="padding:11px 14px; border:1px solid #e2e8f0; font-weight:bold; background:#f8fafc;">Working Hours</td>
-      <td style="padding:11px 14px; border:1px solid #e2e8f0;">${escapeXml(sections.officeHours)}</td>
+      <td>City &amp; Country</td>
+      <td>${escapeXml(city)}, ${escapeXml(country)}</td>
     </tr>
-    <tr style="background:#ffffff;">
-      <td style="padding:11px 14px; border:1px solid #e2e8f0; font-weight:bold; background:#f8fafc;">Terminal / Address</td>
-      <td style="padding:11px 14px; border:1px solid #e2e8f0;">${escapeXml(sections.officeAddress)}</td>
+    <tr>
+      <td>Direct Helpline</td>
+      <td><a href="tel:${telLink}">${cleanTfn}</a> (Toll-Free 24/7)</td>
+    </tr>
+    <tr>
+      <td>Working Hours</td>
+      <td>${escapeXml(sections.officeHours)}</td>
+    </tr>
+    <tr>
+      <td>Terminal / Address</td>
+      <td>${escapeXml(sections.officeAddress)}</td>
     </tr>
   </tbody>
 </table>
 
-<h2 id="compensation" style="color:#0f172a;font-size:22px;margin-top:28px;">Passenger Rights &amp; Compensation Guidelines</h2>
-<p style="font-size:15px;line-height:1.7;color:#334155;">Under US federal regulations and international civil aviation treaties, travelers flying on <strong>${escapeXml(airlineName)}</strong> maintain legally protected rights:</p>
+<h2 id="compensation">Passenger Rights &amp; Compensation Guidelines</h2>
+<p>Under US federal regulations and international civil aviation treaties, travelers flying on <strong>${escapeXml(airlineName)}</strong> maintain legally protected rights:</p>
 ${compensationHtml}
 
-<h2 id="services" style="color:#0f172a;font-size:22px;margin-top:28px;">Key Services Handled at the ${escapeXml(airlineName)} ${escapeXml(city)} Desk</h2>
-<p style="font-size:15px;line-height:1.7;color:#334155;">The customer service representatives at the <strong>${escapeXml(city)}</strong> center provide comprehensive solutions for all phases of your journey:</p>
-<ul style="padding-left:22px;font-size:15px;line-height:1.8;color:#334155;">
+<h2 id="services">Key Services Handled at the ${escapeXml(airlineName)} ${escapeXml(city)} Desk</h2>
+<p>The customer service representatives at the <strong>${escapeXml(city)}</strong> center provide comprehensive solutions for all phases of your journey:</p>
+<ul>
 ${servicesListHtml}
 </ul>
 
-<h2 style="color:#0f172a;font-size:22px;margin-top:28px;">How to Contact the ${escapeXml(airlineName)} ${escapeXml(city)} Office</h2>
-<p style="font-size:15px;line-height:1.7;color:#334155;">Passengers have multiple convenient avenues to reach the <strong>${escapeXml(airlineName)} ${escapeXml(city)}</strong> team:</p>
-<ol style="padding-left:22px;font-size:15px;line-height:1.8;color:#334155;">
-  <li><strong>Telephone Helpline:</strong> For immediate assistance with flight disputes, refunds, or same-day reservations, call <a href="tel:${telLink}" style="color:#0284c7; font-weight:bold;">${cleanTfn}</a>. Live specialists can access global reservations systems in real-time.</li>
+<h2>How to Contact the ${escapeXml(airlineName)} ${escapeXml(city)} Office</h2>
+<p>Passengers have multiple convenient avenues to reach the <strong>${escapeXml(airlineName)} ${escapeXml(city)}</strong> team:</p>
+<ol>
+  <li><strong>Telephone Helpline:</strong> For immediate assistance with flight disputes, refunds, or same-day reservations, call <a href="tel:${telLink}">${cleanTfn}</a>. Live specialists can access global reservations systems in real-time.</li>
   <li><strong>Airport Passenger Desk:</strong> Visit the official airline check-in counter located in the main terminal prior to flight departure.</li>
   <li><strong>Regional passenger protection:</strong> If unresolved, use the official aviation complaint channel for ${escapeXml(country)} and keep your booking records.</li>
 </ol>
 
-<h2 id="faq" style="color:#0f172a;font-size:22px;margin-top:28px;">Frequently Asked Questions (FAQ)</h2>
+<h2 id="faq">Frequently Asked Questions (FAQ)</h2>
 ${faqsHtml}
 ${linksHtml}
-<div style="background:#f1f5f9; padding:18px 22px; border-radius:10px; margin:28px 0; border:1px solid #e2e8f0; font-size:13px; color:#475569; line-height: 1.6;">
-  <strong>Transparency &amp; Independent Disclaimer:</strong> EasyFlightConnect is an independent online travel information portal providing passenger guides, airport terminal directories, and flight support details. We are not directly affiliated with, sponsored by, or endorsed by ${escapeXml(airlineName)} or any other commercial airline. For official ticket contracts, baggage liability rules, and carrier terms, please refer to the official airline channels or contact our independent customer assistance desk at <a href="tel:${telLink}" style="color:#0284c7; font-weight:bold;">${cleanTfn}</a>.
 </div>
-</div>`);
+</article>`);
 }
 
 /**
