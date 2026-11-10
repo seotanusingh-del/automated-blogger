@@ -674,6 +674,128 @@ Return valid JSON with this exact structure:
   }
 });
 
+function escapeXmlBackend(str: string): string {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+/**
+ * Ensures content published to Blogger is 100% formatted rich text & images,
+ * and never raw JSON, markdown fences, script tags, meta directives, or unescaped HTML strings.
+ */
+function cleanAndFormatBloggerHtml(rawInput: any): string {
+  if (rawInput === null || rawInput === undefined) return '';
+
+  let html = '';
+
+  // 1. If input is an object or array, extract content or format it
+  if (typeof rawInput === 'object') {
+    if (typeof rawInput.htmlContent === 'string' && rawInput.htmlContent.trim()) {
+      html = rawInput.htmlContent;
+    } else if (typeof rawInput.content_html === 'string' && rawInput.content_html.trim()) {
+      html = rawInput.content_html;
+    } else if (typeof rawInput.html === 'string' && rawInput.html.trim()) {
+      html = rawInput.html;
+    } else if (typeof rawInput.content === 'string' && rawInput.content.trim()) {
+      html = rawInput.content;
+    } else if (typeof rawInput.overview === 'string' || Array.isArray(rawInput.services) || Array.isArray(rawInput.faqs)) {
+      const title = rawInput.title || 'Travel & Passenger Guide';
+      const overview = (rawInput.overview || '')
+        .split('\n\n')
+        .map((p: string) => `<p style="margin:0 0 16px 0;font-size:15px;line-height:1.7;color:#334155;">${escapeXmlBackend(p)}</p>`)
+        .join('');
+      const services = Array.isArray(rawInput.services)
+        ? `<ul style="padding-left:20px;line-height:1.8;color:#334155;">${rawInput.services.map((s: string) => `<li>${escapeXmlBackend(String(s))}</li>`).join('')}</ul>`
+        : '';
+      const faqs = Array.isArray(rawInput.faqs)
+        ? rawInput.faqs.map((f: any) => `
+          <div style="margin:14px 0;padding:14px 18px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;">
+            <strong style="color:#0f172a;display:block;margin-bottom:6px;">Q: ${escapeXmlBackend(f.question || '')}</strong>
+            <p style="margin:0;font-size:14px;color:#334155;line-height:1.6;">${escapeXmlBackend(f.answer || '')}</p>
+          </div>`).join('')
+        : '';
+
+      html = `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;line-height:1.7;color:#334155;max-width:820px;margin:0 auto;padding:4px;">
+        <h2 style="font-size:24px;color:#0f172a;margin-bottom:16px;">${escapeXmlBackend(title)}</h2>
+        ${overview}
+        ${services ? `<h3 style="font-size:19px;color:#0f172a;margin-top:24px;">Key Services &amp; Support</h3>${services}` : ''}
+        ${faqs ? `<h3 style="font-size:19px;color:#0f172a;margin-top:24px;">Frequently Asked Questions</h3>${faqs}` : ''}
+      </div>`;
+    } else {
+      html = Object.values(rawInput).filter(v => typeof v === 'string').join('\n\n');
+    }
+  } else {
+    html = String(rawInput);
+  }
+
+  // 2. Check if the string itself is a JSON representation
+  const trimmed = html.trim();
+  if (
+    (trimmed.startsWith('{') && trimmed.endsWith('}')) ||
+    (trimmed.startsWith('[') && trimmed.endsWith(']'))
+  ) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      return cleanAndFormatBloggerHtml(parsed);
+    } catch {
+      // Continue if not valid JSON
+    }
+  }
+
+  // 3. Strip Markdown code fences (e.g. ```html ... ``` or ```json ... ```)
+  html = html.replace(/^\s*```(?:html|json|xml|markdown)?\s*\n?/i, '');
+  html = html.replace(/\n?\s*```\s*$/i, '');
+
+  // 4. If content is double-escaped HTML (e.g. &lt;div or &lt;p or &lt;h), unescape entities
+  if (/&lt;(div|p|h[1-6]|span|table|ul|ol|li|img|a\s|strong|em)\b/i.test(html)) {
+    html = html
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/&amp;/g, '&');
+  }
+
+  // 5. Strip out disallowed post body tags that cause Blogger to escape or output raw text
+  html = html.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
+  html = html.replace(/<meta\b[^>]*\/?>/gi, '');
+  html = html.replace(/<link\b[^>]*\/?>/gi, '');
+  html = html.replace(/<!DOCTYPE[^>]*>/gi, '');
+  html = html.replace(/<\/?(html|head|body)[^>]*>/gi, '');
+  html = html.replace(/<!--[\s\S]*?-->/g, '');
+
+  // 6. Check if markdown headers or bold are present without HTML
+  if (!/<(?:p|div|h[1-6]|table|ul|ol)\b/i.test(html)) {
+    html = html
+      .replace(/^### (.*$)/gim, '<h3 style="font-size:18px;color:#0f172a;margin-top:20px;margin-bottom:8px;">$1</h3>')
+      .replace(/^## (.*$)/gim, '<h2 style="font-size:22px;color:#0f172a;margin-top:24px;margin-bottom:12px;">$1</h2>')
+      .replace(/^# (.*$)/gim, '<h1 style="font-size:26px;color:#0f172a;margin-top:28px;margin-bottom:14px;">$1</h1>')
+      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" style="color:#0284c7;text-decoration:underline;">$1</a>')
+      .split(/\n\s*\n/)
+      .map(p => {
+        const pTrimmed = p.trim();
+        if (!pTrimmed) return '';
+        if (pTrimmed.startsWith('<h') || pTrimmed.startsWith('<ul') || pTrimmed.startsWith('<div')) return pTrimmed;
+        return `<p style="margin:0 0 16px 0;font-size:15px;line-height:1.7;color:#334155;">${pTrimmed.replace(/\n/g, '<br/>')}</p>`;
+      })
+      .filter(Boolean)
+      .join('\n');
+  }
+
+  // 7. Ensure images have responsive inline styling so they render cleanly across desktop and mobile
+  html = html.replace(/<img\b(?![^>]*\bstyle=)[^>]*>/gi, (match) => {
+    return match.replace('<img', '<img style="max-width:100%;height:auto;border-radius:10px;margin:16px 0;display:block;"');
+  });
+
+  return html.trim();
+}
+
 app.post(['/api/blogger/publish', '/blogger/publish'], async (req, res) => {
   // Authorization: Enforce PUBLISH_SECRET only if configured AND request is not from the same-origin app
   const auth = req.headers.authorization || '';
@@ -705,7 +827,9 @@ app.post(['/api/blogger/publish', '/blogger/publish'], async (req, res) => {
 
   try {
     const url = `https://www.googleapis.com/blogger/v3/blogs/${encodeURIComponent(blogId)}/posts${isDraft ? '?isDraft=true' : ''}`;
-    const payload: any = { title, content };
+    // Sanitize and format content into pure rich text and images (no JSON, script, meta, or markdown)
+    const cleanContent = cleanAndFormatBloggerHtml(content);
+    const payload: any = { title, content: cleanContent };
     if (labels?.length) payload.labels = labels;
     if (customMetaData) payload.customMetaData = String(customMetaData).trim();
     if (location) payload.location = location;

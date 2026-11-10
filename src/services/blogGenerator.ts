@@ -379,21 +379,12 @@ export function buildHtmlFromSections(
     ]
   };
 
-  const schemaHtml = `<script type="application/ld+json">
-${JSON.stringify(schemaJson, null, 2)}
-</script>`;
-
-  return `<!-- SEO Meta & Robots Directives -->
-<meta name="description" content="${escapeXml(searchDesc)}" />
-<meta name="robots" content="${escapeXml(robotsDirectives)}" />
-<meta name="googlebot" content="${escapeXml(robotsDirectives)}" />
-<link rel="canonical" href="${canonicalUrl}" />
-${schemaHtml}
-
-<h1>${escapeXml(title)}</h1>
-${companyName.trim() ? `<p style="font-size:13px;color:#475569;font-weight:700;">Published by ${escapeXml(companyName.trim())}</p>` : ''}
-<img src="${bannerImg}" alt="${escapeXml(airlineName)} ${escapeXml(officeTitle)} Customer Support and Flight Desk" style="max-width:100%;height:auto;border-radius:10px;margin:16px 0;box-shadow:0 6px 18px rgba(0,0,0,0.12);" />
-<p style="font-size:16px;line-height:1.75;">Facing a problem with an ${escapeXml(airlineName)} booking, flight schedule, baggage, payment, or customer service? Understanding the dispute process can help passengers explain their concerns and request a fair review. Whether the issue involves a reservation, a flight disruption, or a service concern, keeping accurate travel records is an important first step.${escapeXml(cleanTfn)}</p>
+  return cleanAndFormatBloggerHtml(`
+<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 16px; line-height: 1.7; color: #334155; max-width: 820px; margin: 0 auto; padding: 4px;">
+<h1 style="font-size: 28px; font-weight: 800; color: #0f172a; line-height: 1.3; margin: 0 0 16px 0;">${escapeXml(title)}</h1>
+${companyName.trim() ? `<p style="font-size:13px;color:#475569;font-weight:700;margin:0 0 16px 0;">Published by ${escapeXml(companyName.trim())}</p>` : ''}
+<img src="${bannerImg}" alt="${escapeXml(airlineName)} ${escapeXml(officeTitle)} Customer Support and Flight Desk" style="max-width:100%;height:auto;border-radius:12px;margin:16px 0 24px 0;box-shadow:0 6px 18px rgba(0,0,0,0.12);display:block;" />
+<p style="font-size:16px;line-height:1.75;margin:0 0 20px 0;color:#334155;">Facing a problem with an ${escapeXml(airlineName)} booking, flight schedule, baggage, payment, or customer service? Understanding the dispute process can help passengers explain their concerns and request a fair review. Whether the issue involves a reservation, a flight disruption, or a service concern, keeping accurate travel records is an important first step.</p>
 
 <!-- Table of Contents / Anchor Redirects -->
 <div style="background:#f1f5f9;border-left:4px solid #0284c7;padding:14px 18px;border-radius:6px;margin:20px 0;font-size:14px;">
@@ -423,15 +414,15 @@ ${companyName.trim() ? `<p style="font-size:13px;color:#475569;font-weight:700;"
   </div>
 </div>
 
-<h2 id="overview">Overview of the ${escapeXml(airlineName)} ${escapeXml(city)} Office</h2>
-<p>${escapeXml(sections.overviewPara1)}</p>
-<p>${escapeXml(sections.overviewPara2)}</p>
+<h2 id="overview" style="color:#0f172a;font-size:22px;margin-top:28px;">Overview of the ${escapeXml(airlineName)} ${escapeXml(city)} Office</h2>
+<p style="font-size:15px;line-height:1.7;color:#334155;margin-bottom:14px;">${escapeXml(sections.overviewPara1)}</p>
+<p style="font-size:15px;line-height:1.7;color:#334155;margin-bottom:14px;">${escapeXml(sections.overviewPara2)}</p>
 
-<h2 id="dispute-steps">Step-by-Step ${escapeXml(airlineName)} Dispute &amp; Complaint Process</h2>
-<p>Passengers encountering flight disruptions, delayed baggage, or billing disputes with <strong>${escapeXml(airlineName)}</strong> should follow this proven protocol to expedite settlement:</p>
+<h2 id="dispute-steps" style="color:#0f172a;font-size:22px;margin-top:28px;">Step-by-Step ${escapeXml(airlineName)} Dispute &amp; Complaint Process</h2>
+<p style="font-size:15px;line-height:1.7;color:#334155;">Passengers encountering flight disruptions, delayed baggage, or billing disputes with <strong>${escapeXml(airlineName)}</strong> should follow this proven protocol to expedite settlement:</p>
 ${disputeStepsHtml}
 
-<h2 id="directory">${escapeXml(airlineName)} ${escapeXml(city)} Office Details &amp; Directory</h2>
+<h2 id="directory" style="color:#0f172a;font-size:22px;margin-top:28px;">${escapeXml(airlineName)} ${escapeXml(city)} Office Details &amp; Directory</h2>
 <table style="width:100%; border-collapse:collapse; margin:22px 0; font-size:14px; text-align:left; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
   <thead>
     <tr style="background:#0284c7; color:#ffffff;">
@@ -469,30 +460,143 @@ ${disputeStepsHtml}
   </tbody>
 </table>
 
-<h2 id="compensation">Passenger Rights &amp; Compensation Guidelines</h2>
-<p>Under US federal regulations and international civil aviation treaties, travelers flying on <strong>${escapeXml(airlineName)}</strong> maintain legally protected rights:</p>
+<h2 id="compensation" style="color:#0f172a;font-size:22px;margin-top:28px;">Passenger Rights &amp; Compensation Guidelines</h2>
+<p style="font-size:15px;line-height:1.7;color:#334155;">Under US federal regulations and international civil aviation treaties, travelers flying on <strong>${escapeXml(airlineName)}</strong> maintain legally protected rights:</p>
 ${compensationHtml}
 
-<h2 id="services">Key Services Handled at the ${escapeXml(airlineName)} ${escapeXml(city)} Desk</h2>
-<p>The customer service representatives at the <strong>${escapeXml(city)}</strong> center provide comprehensive solutions for all phases of your journey:</p>
-<ul>
+<h2 id="services" style="color:#0f172a;font-size:22px;margin-top:28px;">Key Services Handled at the ${escapeXml(airlineName)} ${escapeXml(city)} Desk</h2>
+<p style="font-size:15px;line-height:1.7;color:#334155;">The customer service representatives at the <strong>${escapeXml(city)}</strong> center provide comprehensive solutions for all phases of your journey:</p>
+<ul style="padding-left:22px;font-size:15px;line-height:1.8;color:#334155;">
 ${servicesListHtml}
 </ul>
 
-<h2>How to Contact the ${escapeXml(airlineName)} ${escapeXml(city)} Office</h2>
-<p>Passengers have multiple convenient avenues to reach the <strong>${escapeXml(airlineName)} ${escapeXml(city)}</strong> team:</p>
-<ol>
+<h2 style="color:#0f172a;font-size:22px;margin-top:28px;">How to Contact the ${escapeXml(airlineName)} ${escapeXml(city)} Office</h2>
+<p style="font-size:15px;line-height:1.7;color:#334155;">Passengers have multiple convenient avenues to reach the <strong>${escapeXml(airlineName)} ${escapeXml(city)}</strong> team:</p>
+<ol style="padding-left:22px;font-size:15px;line-height:1.8;color:#334155;">
   <li><strong>Telephone Helpline:</strong> For immediate assistance with flight disputes, refunds, or same-day reservations, call <a href="tel:${telLink}" style="color:#0284c7; font-weight:bold;">${cleanTfn}</a>. Live specialists can access global reservations systems in real-time.</li>
   <li><strong>Airport Passenger Desk:</strong> Visit the official airline check-in counter located in the main terminal prior to flight departure.</li>
   <li><strong>Regional passenger protection:</strong> If unresolved, use the official aviation complaint channel for ${escapeXml(country)} and keep your booking records.</li>
 </ol>
 
-<h2 id="faq">Frequently Asked Questions (FAQ)</h2>
+<h2 id="faq" style="color:#0f172a;font-size:22px;margin-top:28px;">Frequently Asked Questions (FAQ)</h2>
 ${faqsHtml}
 ${linksHtml}
 <div style="background:#f1f5f9; padding:18px 22px; border-radius:10px; margin:28px 0; border:1px solid #e2e8f0; font-size:13px; color:#475569; line-height: 1.6;">
   <strong>Transparency &amp; Independent Disclaimer:</strong> EasyFlightConnect is an independent online travel information portal providing passenger guides, airport terminal directories, and flight support details. We are not directly affiliated with, sponsored by, or endorsed by ${escapeXml(airlineName)} or any other commercial airline. For official ticket contracts, baggage liability rules, and carrier terms, please refer to the official airline channels or contact our independent customer assistance desk at <a href="tel:${telLink}" style="color:#0284c7; font-weight:bold;">${cleanTfn}</a>.
-</div>`;
+</div>
+</div>`);
+}
+
+/**
+ * Ensures blog post content sent to Blogger or rendered on screen is 100% human-readable
+ * formatted rich text and images, and NEVER raw JSON, markdown fences, script tags, or raw HTML tags.
+ */
+export function cleanAndFormatBloggerHtml(rawInput: any): string {
+  if (rawInput === null || rawInput === undefined) return '';
+
+  let html = '';
+
+  // 1. If input is an object or array, extract content or format it
+  if (typeof rawInput === 'object') {
+    if (typeof rawInput.htmlContent === 'string' && rawInput.htmlContent.trim()) {
+      html = rawInput.htmlContent;
+    } else if (typeof rawInput.content_html === 'string' && rawInput.content_html.trim()) {
+      html = rawInput.content_html;
+    } else if (typeof rawInput.html === 'string' && rawInput.html.trim()) {
+      html = rawInput.html;
+    } else if (typeof rawInput.content === 'string' && rawInput.content.trim()) {
+      html = rawInput.content;
+    } else if (typeof rawInput.overview === 'string' || Array.isArray(rawInput.services) || Array.isArray(rawInput.faqs)) {
+      const title = rawInput.title || 'Travel & Passenger Guide';
+      const overview = (rawInput.overview || '')
+        .split('\n\n')
+        .map((p: string) => `<p style="margin:0 0 16px 0;font-size:15px;line-height:1.7;color:#334155;">${escapeXml(p)}</p>`)
+        .join('');
+      const services = Array.isArray(rawInput.services)
+        ? `<ul style="padding-left:20px;line-height:1.8;color:#334155;">${rawInput.services.map((s: string) => `<li>${escapeXml(String(s))}</li>`).join('')}</ul>`
+        : '';
+      const faqs = Array.isArray(rawInput.faqs)
+        ? rawInput.faqs.map((f: any) => `
+          <div style="margin:14px 0;padding:14px 18px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;">
+            <strong style="color:#0f172a;display:block;margin-bottom:6px;">Q: ${escapeXml(f.question || '')}</strong>
+            <p style="margin:0;font-size:14px;color:#334155;line-height:1.6;">${escapeXml(f.answer || '')}</p>
+          </div>`).join('')
+        : '';
+
+      html = `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;line-height:1.7;color:#334155;max-width:820px;margin:0 auto;padding:4px;">
+        <h2 style="font-size:24px;color:#0f172a;margin-bottom:16px;">${escapeXml(title)}</h2>
+        ${overview}
+        ${services ? `<h3 style="font-size:19px;color:#0f172a;margin-top:24px;">Key Services &amp; Support</h3>${services}` : ''}
+        ${faqs ? `<h3 style="font-size:19px;color:#0f172a;margin-top:24px;">Frequently Asked Questions</h3>${faqs}` : ''}
+      </div>`;
+    } else {
+      html = Object.values(rawInput).filter(v => typeof v === 'string').join('\n\n');
+    }
+  } else {
+    html = String(rawInput);
+  }
+
+  // 2. Check if the string itself is a JSON representation
+  const trimmed = html.trim();
+  if (
+    (trimmed.startsWith('{') && trimmed.endsWith('}')) ||
+    (trimmed.startsWith('[') && trimmed.endsWith(']'))
+  ) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      return cleanAndFormatBloggerHtml(parsed);
+    } catch {
+      // Continue if not valid JSON
+    }
+  }
+
+  // 3. Strip Markdown code fences (e.g. ```html ... ``` or ```json ... ```)
+  html = html.replace(/^\s*```(?:html|json|xml|markdown)?\s*\n?/i, '');
+  html = html.replace(/\n?\s*```\s*$/i, '');
+
+  // 4. If content is double-escaped HTML (e.g. &lt;div or &lt;p or &lt;h), unescape entities
+  if (/&lt;(div|p|h[1-6]|span|table|ul|ol|li|img|a\s|strong|em)\b/i.test(html)) {
+    html = html
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/&amp;/g, '&');
+  }
+
+  // 5. Strip out disallowed post body tags that cause Blogger to escape or output raw text
+  html = html.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
+  html = html.replace(/<meta\b[^>]*\/?>/gi, '');
+  html = html.replace(/<link\b[^>]*\/?>/gi, '');
+  html = html.replace(/<!DOCTYPE[^>]*>/gi, '');
+  html = html.replace(/<\/?(html|head|body)[^>]*>/gi, '');
+  html = html.replace(/<!--[\s\S]*?-->/g, '');
+
+  // 6. Check if markdown headers or bold are present without HTML
+  if (!/<(?:p|div|h[1-6]|table|ul|ol)\b/i.test(html)) {
+    html = html
+      .replace(/^### (.*$)/gim, '<h3 style="font-size:18px;color:#0f172a;margin-top:20px;margin-bottom:8px;">$1</h3>')
+      .replace(/^## (.*$)/gim, '<h2 style="font-size:22px;color:#0f172a;margin-top:24px;margin-bottom:12px;">$1</h2>')
+      .replace(/^# (.*$)/gim, '<h1 style="font-size:26px;color:#0f172a;margin-top:28px;margin-bottom:14px;">$1</h1>')
+      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" style="color:#0284c7;text-decoration:underline;">$1</a>')
+      .split(/\n\s*\n/)
+      .map(p => {
+        const pTrimmed = p.trim();
+        if (!pTrimmed) return '';
+        if (pTrimmed.startsWith('<h') || pTrimmed.startsWith('<ul') || pTrimmed.startsWith('<div')) return pTrimmed;
+        return `<p style="margin:0 0 16px 0;font-size:15px;line-height:1.7;color:#334155;">${pTrimmed.replace(/\n/g, '<br/>')}</p>`;
+      })
+      .filter(Boolean)
+      .join('\n');
+  }
+
+  // 7. Ensure images have responsive inline styling so they render cleanly across desktop and mobile
+  html = html.replace(/<img\b(?![^>]*\bstyle=)[^>]*>/gi, (match) => {
+    return match.replace('<img', '<img style="max-width:100%;height:auto;border-radius:10px;margin:16px 0;display:block;"');
+  });
+
+  return html.trim();
 }
 
 /**

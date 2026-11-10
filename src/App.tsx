@@ -55,7 +55,8 @@ import { AirlineItem, AirlineOffice, GeneratedPost, SocialLinks, PostSections, C
 import { 
   generateOfficeBlogPost, 
   generateOfficeBannerSvg,
-  buildHtmlFromSections 
+  buildHtmlFromSections,
+  cleanAndFormatBloggerHtml
 } from './services/blogGenerator';
 import { getCoordinatesForCity } from './data/cityCoordinates';
 import { AirlineManagerModal } from './components/AirlineManagerModal';
@@ -475,10 +476,11 @@ export default function App() {
       const rows = await getBlogTableDrafts();
       setSupabaseDrafts(rows.map((row: StoredBlogDraft, index) => {
         const title = String(row.title || row.keyword || `Saved blog ${index + 1}`);
-        const htmlContent = String(
+        const rawHtml = String(
           row.content_html || row.html_content || row.content || row.article_html ||
           row.blog_content || row.article || row.body || ''
         );
+        const htmlContent = cleanAndFormatBloggerHtml(rawHtml);
         return {
           id: `supabase-blog-${row.id || index}`,
           templateName: title,
@@ -792,13 +794,15 @@ export default function App() {
           .replace(/\{\{tfnNumber\}\}/gi, commonTfn)
           .replace(/\{\{companyName\}\}/gi, companyName || entry.name);
 
-        const htmlContent = rawHtml
-          .replace(/\{\{(entry|airline|brand)\}\}/gi, entry.name)
-          .replace(/\{\{city\}\}/gi, office.city)
-          .replace(/\{\{country\}\}/gi, office.country)
-          .replace(/\{\{tfnNumber\}\}/gi, commonTfn)
-          .replace(/\{\{bannerUrl\}\}/gi, banner)
-          .replace(/\{\{companyName\}\}/gi, companyName || entry.name);
+        const htmlContent = cleanAndFormatBloggerHtml(
+          rawHtml
+            .replace(/\{\{(entry|airline|brand)\}\}/gi, entry.name)
+            .replace(/\{\{city\}\}/gi, office.city)
+            .replace(/\{\{country\}\}/gi, office.country)
+            .replace(/\{\{tfnNumber\}\}/gi, commonTfn)
+            .replace(/\{\{bannerUrl\}\}/gi, banner)
+            .replace(/\{\{companyName\}\}/gi, companyName || entry.name)
+        );
 
         queue.push({
           ...source,
@@ -1020,7 +1024,8 @@ export default function App() {
       addLog('workflow', 'success', 'Blog Received', `Successfully fetched blog for ${requestId}`);
 
       const title = String(payload.title || targetKeyword || 'SEO travel guide');
-      const content = String(payload.content_html || payload.html_content || payload.content || payload.html || '');
+      const rawWorkflowContent = payload.content_html || payload.html_content || payload.content || payload.html || payload.output || (typeof payload === 'object' ? payload : '');
+      const content = cleanAndFormatBloggerHtml(rawWorkflowContent);
       if (!content) throw new Error('Workflow returned no article HTML.');
       const banner = String(payload.banner_url || payload.image_url || customImages[0] || '');
       const entries = selectedAirlines.length > 0 ? selectedAirlines : airlines;
@@ -1034,7 +1039,7 @@ export default function App() {
           queue.push({
             ...generateOfficeBlogPost(entry, office, targetKeyword, commonTfn, imageUrl, socialLinks, isDarkMode ? 'dark' : 'light', companyName, companyLogoUrl, socialLinks.website),
             title: title.replace(/\{\{(entry|airline|brand)\}\}/gi, entry.name),
-            htmlContent: content.replace(/\{\{(entry|airline|brand)\}\}/gi, entry.name),
+            htmlContent: cleanAndFormatBloggerHtml(content.replace(/\{\{(entry|airline|brand)\}\}/gi, entry.name)),
             imageUrl,
             status: 'Ready',
             verified: true,
@@ -1285,7 +1290,10 @@ export default function App() {
   });
 
   const makePostPublishable = async (post: GeneratedPost): Promise<GeneratedPost> => {
-    if (!post.imageUrl.startsWith('data:')) return post;
+    let currentHtml = cleanAndFormatBloggerHtml(post.htmlContent);
+    if (!post.imageUrl.startsWith('data:')) {
+      return { ...post, htmlContent: currentHtml };
+    }
     try {
       const response = await fetch(post.imageUrl);
       const blob = await response.blob();
@@ -1296,16 +1304,16 @@ export default function App() {
       // Replace the specific data URI that matches the banner in the HTML
       // This is safer than a global greedy replace of all data images
       const escapedDataUri = post.imageUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const newHtml = post.htmlContent.replace(new RegExp(`src="${escapedDataUri}"`, 'g'), `src="${publicUrl}"`);
+      const newHtml = currentHtml.replace(new RegExp(`src="${escapedDataUri}"`, 'g'), `src="${publicUrl}"`);
 
       return {
         ...post,
         imageUrl: publicUrl,
-        htmlContent: newHtml
+        htmlContent: cleanAndFormatBloggerHtml(newHtml)
       };
     } catch (err) {
       console.error('Failed to make post publishable:', err);
-      return post;
+      return { ...post, htmlContent: currentHtml };
     }
   };
 
@@ -1546,7 +1554,7 @@ export default function App() {
         body: JSON.stringify({
           blogId: blogId,
           title: publishablePost.title,
-          content: publishablePost.htmlContent,
+          content: cleanAndFormatBloggerHtml(publishablePost.htmlContent),
           labels: publishablePost.bloggerSettings?.labels || publishablePost.labels,
           customMetaData: publishablePost.bloggerSettings?.searchDescription,
           location: publishablePost.bloggerSettings?.location,
@@ -1638,7 +1646,7 @@ export default function App() {
           body: JSON.stringify({
             blogId: blogId,
             title: publishablePost.title,
-            content: publishablePost.htmlContent,
+            content: cleanAndFormatBloggerHtml(publishablePost.htmlContent),
             labels: publishablePost.bloggerSettings?.labels || publishablePost.labels,
             customMetaData: publishablePost.bloggerSettings?.searchDescription,
             location: publishablePost.bloggerSettings?.location,
