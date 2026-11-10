@@ -209,7 +209,7 @@ export default function App() {
     return 'Office Location, Contact Number & Flight Reservations';
   });
   const [companyName, setCompanyName] = useState<string>(() => {
-    try { return JSON.parse(localStorage.getItem('easyflight_session_draft') || '{}').companyName || ''; } catch { return ''; }
+    try { return JSON.parse(localStorage.getItem('easyflight_session_draft') || '{}').companyName || 'Easy Flight Connect'; } catch { return 'Easy Flight Connect'; }
   });
   const [companyLogoUrl, setCompanyLogoUrl] = useState<string>(() => {
     try { return JSON.parse(localStorage.getItem('easyflight_session_draft') || '{}').companyLogoUrl || ''; } catch { return ''; }
@@ -231,11 +231,15 @@ export default function App() {
   const [socialLinks, setSocialLinks] = useState<SocialLinks>(() => {
     const saved = localStorage.getItem('easyflight_session_draft');
     if (saved) {
-      try { return JSON.parse(saved).socialLinks || {}; } catch (e) { /* ignore */ }
+      try { 
+        const parsed = JSON.parse(saved).socialLinks || {}; 
+        if (!parsed.website) parsed.website = 'https://easyflightconnect.com';
+        return parsed;
+      } catch (e) { /* ignore */ }
     }
     return {
-      website: '',
-      supportUrl: '',
+      website: 'https://easyflightconnect.com',
+      supportUrl: 'https://easyflightconnect.com/support',
       whatsapp: '',
       facebook: '',
       twitter: '',

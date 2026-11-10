@@ -262,6 +262,23 @@ export const LogsHistoryManager: React.FC<LogsHistoryManagerProps> = ({
                 <option value="Draft">Draft</option>
                 <option value="Error">Error</option>
               </select>
+              <button
+                type="button"
+                onClick={() => {
+                  const allIds = filteredPosts.map(p => p.id);
+                  const isAllSelected = allIds.length > 0 && allIds.every(id => selectedIds.includes(id));
+                  if (isAllSelected) {
+                    setSelectedIds(prev => prev.filter(id => !allIds.includes(id)));
+                  } else {
+                    setSelectedIds(prev => Array.from(new Set([...prev, ...allIds])));
+                  }
+                }}
+                className={`px-3 py-2 rounded-xl border text-xs font-bold transition ${
+                  isDarkMode ? 'border-slate-700 hover:bg-slate-800 text-slate-300' : 'border-slate-200 hover:bg-slate-50 text-slate-700'
+                }`}
+              >
+                {filteredPosts.length > 0 && filteredPosts.every(p => selectedIds.includes(p.id)) ? 'Deselect All' : 'Select All'}
+              </button>
             </div>
 
             <div className="flex items-center gap-2">
