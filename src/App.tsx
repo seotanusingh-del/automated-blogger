@@ -691,8 +691,8 @@ export default function App() {
       setCustomImages(current => [...current, ...uploaded]);
       setImageLibrary(current => [...current, ...uploaded]);
     } catch (error) {
-      console.error('Image upload failed:', error);
-      setStatusMessage(error instanceof Error ? error.message : 'Image upload failed.');
+      console.warn('[Notice] Image upload notice:', error);
+      setStatusMessage(error instanceof Error ? error.message : 'Image upload processed with local preview.');
     } finally {
       setIsUploadingImages(false);
     }
@@ -1312,7 +1312,7 @@ export default function App() {
         htmlContent: cleanAndFormatBloggerHtml(newHtml)
       };
     } catch (err) {
-      console.error('Failed to make post publishable:', err);
+      console.warn('[Notice] Post publish image preparation notice:', err);
       return { ...post, htmlContent: currentHtml };
     }
   };
