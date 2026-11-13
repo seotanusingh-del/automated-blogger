@@ -678,25 +678,20 @@ export default function App() {
     if (!imageFiles.length) return;
     setIsUploadingImages(true);
     try {
-      const uploaded = await Promise.all(imageFiles.map(async file => {
-        try {
-          return await uploadImageToPublicBucket(file, file.name);
-        } catch (error) {
-          const localUrl = await new Promise<string>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => typeof reader.result === 'string' ? resolve(reader.result) : reject(new Error('Could not preview image.'));
-            reader.onerror = () => reject(error);
-            reader.readAsDataURL(file);
-          });
-          setStatusMessage('Storage upload failed; using a local preview. Configure Supabase storage before publishing.');
-          return localUrl;
-        }
+      const uploaded = await Promise.all(imageFiles.map(file => {
+        return new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => typeof reader.result === 'string' ? resolve(reader.result) : reject(new Error('Could not read image file.'));
+          reader.onerror = () => reject(new Error('File read error.'));
+          reader.readAsDataURL(file);
+        });
       }));
       setCustomImages(current => [...current, ...uploaded]);
       setImageLibrary(current => [...current, ...uploaded]);
+      setStatusMessage(`Successfully loaded ${uploaded.length} image(s) locally.`);
     } catch (error) {
-      console.warn('[Notice] Image upload notice:', error);
-      setStatusMessage(error instanceof Error ? error.message : 'Image upload processed with local preview.');
+      console.warn('[Notice] Image loading notice:', error);
+      setStatusMessage('Image loading processed with local preview.');
     } finally {
       setIsUploadingImages(false);
     }
@@ -1349,44 +1344,35 @@ export default function App() {
     setStatusMessage('Company branding applied to the current blog queue.');
   };
 
-  // Upload custom banner
+  // Upload custom banner (local preview / base64 without flooding Supabase storage)
   const handleCustomImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0 || !activePost) return;
     const file = e.target.files[0];
     const scope = applyBannerScope;
     
-    void uploadImageToPublicBucket(file, file.name).then(imageUrl => {
-      setCustomImages(current => [...current, imageUrl]);
-      setImageLibrary(current => [...current, imageUrl]);
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result !== 'string') return;
+      const localUrl = reader.result as string;
+      setCustomImages(current => [...current, localUrl]);
+      setImageLibrary(current => [...current, localUrl]);
       
       setGeneratedPosts(posts => posts.map((post, idx) => {
         if (scope === 'all' || idx === currentPostIndex) {
           return rebuildPost(
             post,
             post.sections || activePost.sections!,
-            imageUrl
+            localUrl
           );
         }
         return post;
       }));
-      setStatusMessage(`Custom banner applied to ${scope === 'all' ? 'every generated post' : 'this post only'}.`);
-    }).catch(error => {
-      console.error('Image upload failed:', error);
-      const reader = new FileReader();
-      reader.onload = () => {
-        if (typeof reader.result !== 'string') return;
-        const localUrl = reader.result as string;
-        setCustomImages(current => [...current, localUrl]);
-        setGeneratedPosts(posts => posts.map((post, idx) => {
-          if (scope === 'all' || idx === currentPostIndex) {
-            return rebuildPost(post, post.sections || activePost.sections!, localUrl);
-          }
-          return post;
-        }));
-        setStatusMessage('Storage upload failed; using local preview. Configure Supabase storage for production.');
-      };
-      reader.readAsDataURL(file);
-    });
+      setStatusMessage(`Custom local banner applied to ${scope === 'all' ? 'every generated post' : 'this post only'}.`);
+    };
+    reader.onerror = () => {
+      setStatusMessage('Failed to read image file.');
+    };
+    reader.readAsDataURL(file);
   };
 
   // Add custom link in modal
@@ -1886,19 +1872,20 @@ export default function App() {
                 <label className="shrink-0 cursor-pointer rounded-lg bg-slate-800 px-3 py-2 text-[11px] font-bold text-white hover:bg-slate-700">
                   <Upload className="w-3.5 h-3.5 inline mr-1" />
                   Upload
-                  <input type="file" accept="image/*" className="hidden" onChange={async (e) => {
+                  <input type="file" accept="image/*" className="hidden" onChange={(e) => {
                     const file = e.target.files?.[0];
                     if (file) {
-                      try {
-                        const url = await uploadImageToPublicBucket(file, file.name);
-                        setCampaignBannerUrl(url);
-                        addLog('supabase', 'success', 'Banner Uploaded', `Global campaign banner uploaded: ${file.name}`);
-                      } catch (err: any) {
-                        setStatusMessage(`Upload failed: ${err.message || 'Check storage config'}`);
-                        // Fallback to local preview if storage fails
-                        const localUrl = URL.createObjectURL(file);
-                        setCampaignBannerUrl(localUrl);
-                      }
+                      const reader = new FileReader();
+                      reader.onload = () => {
+                        if (typeof reader.result === 'string') {
+                          setCampaignBannerUrl(reader.result);
+                          addLog('system', 'success', 'Banner Attached', `Local campaign banner attached: ${file.name}`);
+                        }
+                      };
+                      reader.onerror = () => {
+                        setStatusMessage('Failed to read campaign banner file.');
+                      };
+                      reader.readAsDataURL(file);
                     }
                   }} />
                 </label>
